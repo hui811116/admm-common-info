@@ -405,9 +405,9 @@ def detComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		new_pzcx2 = pzcx2 - mean_grad_x2 * ss_x2
 
 		# error
-		err_z = np.sum(pzcx1x2* px1x2[None,:,:],axis=(1,2)) - new_pz
-		err_x1 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=2) - new_pzcx1
-		err_x2 = np.sum(pzcx1x2 *(px2cx1.T)[None,:,:],axis=1) - new_pzcx2
+		err_z = np.sum(new_pzcx1x2* px1x2[None,:,:],axis=(1,2)) - new_pz
+		err_x1 = np.sum(new_pzcx1x2 * px1cx2[None,:,:],axis=2) - new_pzcx1
+		err_x2 = np.sum(new_pzcx1x2 *(px2cx1.T)[None,:,:],axis=1) - new_pzcx2
 
 		conv_z = 0.5 *np.sum(np.abs(err_z))
 		conv_x1 = 0.5 *np.sum(np.abs(err_x1),axis=0)
