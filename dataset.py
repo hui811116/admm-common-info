@@ -100,14 +100,14 @@ def synToy():
 	# ------------
 	py = np.array([0.5,0.5])
 	px1cy = np.array([
-		[0.5 - eps_min/2,eps_min/2],
-		[0.5 - eps_min/2,eps_min/2],
 		[eps_min/2,0.5-eps_min/2],
+		[0.5 - eps_min/2,eps_min/2],
+		[0.5 - eps_min/2,eps_min/2],
 		[eps_min/2,0.5-eps_min/2]])
 	px2cy = np.array([
-		[0.5 - eps_min/2,eps_min/2],
-		[0.5 - eps_min/2,eps_min/2],
 		[eps_min/2,0.5-eps_min/2],
+		[0.5 - eps_min/2,eps_min/2],
+		[0.5 - eps_min/2,eps_min/2],
 		[eps_min/2,0.5-eps_min/2]])
 	px1 = np.sum(px1cy * py[None,:],1)
 	px2 = np.sum(px2cy * py[None,:],1)
@@ -118,6 +118,7 @@ def synToy():
 			for iy in range(2):
 				tmp_sum += py[iy] * px1cy[ix1,iy] * px2cy[ix2,iy]
 			px12[ix1,ix2] = tmp_sum
+	px12 /= np.sum(px12)
 	px1cx2 = px12 / px2[None,:]
 	px2cx1 = (px12/px1[:,None]).T
 	return {"p_joint":px12,"px_list":[px1,px2],"p_cond":[px1cx2,px2cx1],"pycx_list":[px1cy,px2cy],"py":py}

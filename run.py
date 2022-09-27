@@ -9,18 +9,18 @@ import dataset as dt
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--penalty",type=float,default=128.0,help="penalty coefficient of the ADMM solver")
-parser.add_argument("--maxiter",type=int,default=5000,help="maximum iteration before termination")
+parser.add_argument("--maxiter",type=int,default=50000,help="maximum iteration before termination")
 parser.add_argument("--convthres",type=float,default=1e-6,help="convergence threshold")
-parser.add_argument("--nrun",type=int,default=50,help="number of trail of each simulation")
-parser.add_argument("--ss_init",type=float,default=2e-3,help="step size initialization")
+parser.add_argument("--nrun",type=int,default=10,help="number of trail of each simulation")
+parser.add_argument("--ss_init",type=float,default=1e-3,help="step size initialization")
 parser.add_argument("--ss_scale",type=float,default=0.25,help="step size scaling")
 parser.add_argument("--output",type=str,default="unsu_mv_output",help="output filename")
 parser.add_argument("--seed",type=int,default=None,help="random seed for reproduction")
-parser.add_argument("--dataset",type=str,default="syn2v",help="specify the dataset to use")
-parser.add_argument("--gamma_min",type=float,default=0.01,help="minimum gamma value")
+parser.add_argument("--dataset",type=str,default="toy2v",help="specify the dataset to use")
+parser.add_argument("--gamma_min",type=float,default=0.1,help="minimum gamma value")
 parser.add_argument("--gamma_max",type=float,default=1.0,help="maximum gamma value")
 # the maximum value is always 1. otherwise a different problem
-parser.add_argument("--gamma_num",type=int,default=50,help="number of gamma values")
+parser.add_argument("--gamma_num",type=int,default=10,help="number of gamma values")
 
 args = parser.parse_args()
 argsdict = vars(args)
@@ -59,7 +59,7 @@ for gidx ,gamma in enumerate(gamma_range):
 	for nz in nz_set:
 		conv_cnt = 0
 		for nn in range(args.nrun):			
-			out_dict = alg.egSolver(prob_joint,nz,gamma,args.maxiter,args.convthres,**alg_dict)
+			out_dict = alg.detComAdmm(prob_joint,nz,gamma,args.maxiter,args.convthres,**alg_dict)
 			tmp_result = [gamma,nn,out_dict['niter'],int(out_dict["conv"]),nz]
 			conv_cnt += int(out_dict['conv'])
 			if out_dict['conv']:
@@ -75,20 +75,7 @@ for gidx ,gamma in enumerate(gamma_range):
 				cmizx1cx2 = ut.calcMIcond(pzcx1x2 * prob_joint[None,:,:])
 				# calculate other direction
 				cmizx2cx1 = ut.calcMIcond(np.transpose(pzcx1x2 * prob_joint[None,:,:],(0,2,1)))
-				'''
-				if cmizx2cx1 < 0 or cmizx1cx2 <0:
-					print(np.sum(pz))
-					print(np.sum(pzcx1,0))
-					print(np.sum(pzcx2,0))
-					print(np.sum(pzcx1x2,0))
-					print(np.sum(pzcx1x2 * prob_joint[None,:,:]))
-					print(np.sum(np.transpose(pzcx1x2 * prob_joint[None,:,:],(0,2,1))))
-					print(cmizx1cx2)
-					print(cmizx2cx1)
-					sys.exit("conditional MI should be positive")
-				'''
 				tmp_result += [entz,mizx1,mizx2,cmizx1cx2,cmizx2cx1]
-				#print(pzcx1x2)
 			else:
 				# failed in convergence, either maximum iteration reached or no available step size
 				tmp_result += [0,0,0,0,0]

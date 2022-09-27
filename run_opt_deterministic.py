@@ -73,7 +73,7 @@ rec_idx = 0
 for gidx ,gamma in enumerate(gamma_range):
 	encoder_dict[gidx] = {}
 	for nz in nz_set:
-		min_loss = np.Inf
+		#min_loss = np.Inf
 		for nn in range(args.nrun):
 			#out_dict = alg.detComAdmm(prob_joint,nz,gamma,args.maxiter,args.convthres,**alg_dict)
 			out_dict = algrun(prob_joint,nz,gamma,args.maxiter,args.convthres,**alg_dict)
@@ -91,6 +91,8 @@ for gidx ,gamma in enumerate(gamma_range):
 				if args.encoder:
 					encoder_dict[gidx][nn] = pzcx1x2
 				# take the maximum element
+				pzx1x2 = pzcx1x2 * prob_joint[None,:,:]
+				cmix1x2cz = ut.calcMIcond(np.transpose(pzx1x2,axes=[1,2,0]))
 				max_ele = np.amax(pzcx1x2)
 				mizx1 = ut.calcMI(pzcx1 * px1[None,:])
 				mizx2 = ut.calcMI(pzcx2 * px2[None,:])
@@ -101,16 +103,15 @@ for gidx ,gamma in enumerate(gamma_range):
 				joint_mi = ut.calcMI(np.reshape(pzcx1x2 * prob_joint[None,:,:],(nz,np.prod(prob_joint.shape))))
 				tmp_loss = entz * (1+gamma) -gamma * mizx1 - gamma * mizx2
 				tmp_result += [entz,mizx1,mizx2,cmizx1cx2,cmizx2cx1,max_ele,tmp_loss]
-				if tmp_loss < min_loss:
-					min_loss = tmp_loss
 			else:
 				# failed in convergence, either maximum iteration reached or no available step size
-				max_ele = -1
+				entz = -1
+				cmix1x2cz = -1
 				tmp_result += [0,0,0,0,0,max_ele,np.Inf]
 				tmp_loss = np.Inf
 				
 			res_all[rec_idx,:] = np.array(tmp_result)
-			print("gamma:{:.4f}, ntrial:{:}, nz:{:}, convergence:{:}, niter:{:}, max_element:{:.6f}, tmp_loss:{:.5f}, min_loss:{:.5f}".format(gamma,nn,nz,out_dict["conv"],out_dict["niter"],max_ele,tmp_loss,min_loss))
+			print("gamma:{:.4f}, ntrial:{:}, nz:{:}, convergence:{:}, niter:{:}, H(Z):{:.6f}, tmp_loss:{:.5f}, I(X1;X2|Z):{:.5f}".format(gamma,nn,nz,out_dict["conv"],out_dict["niter"],entz,tmp_loss,cmix1x2cz))
 			rec_idx += 1
 
 		#print("simulated gamma:{:.4f}, nz:{:}, conv_rate:{:.4f}, max_element:{:.4f}, min_loss:{:.5f}".format(gamma,nz,conv_cnt/args.nrun,avg_test,min_loss))
