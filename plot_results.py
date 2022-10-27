@@ -82,6 +82,7 @@ if print_enc:
 	fid.close()
 
 ax.scatter(clean_mix1x2cz_vs_hz[:,0],clean_mix1x2cz_vs_hz[:,1],mk_size,marker="o",color="tab:red",label=r"Solutions",facecolor="none")
+#ax.plot(clean_mix1x2cz_vs_hz[:,0],clean_mix1x2cz_vs_hz[:,1],marker="o",color="tab:red",label=r"Solutions",markersize=mk_size,linewidth=2.0,linestyle="dashed")
 
 #ax.set_ylim([0,1])
 ax.set_ylabel(r"$I(X_1;X_2|Z)$",fontsize=fs_lab)
@@ -111,10 +112,12 @@ ax3.tick_params(axis="both",labelsize=fs_tick)
 
 fig, ax = plt.subplots()
 ax.grid("on")
-ax.scatter(clean_mix1x2cz_vs_hz[:,0],clean_mix1x2cz_vs_hz[:,1],mk_size,marker="o",color="tab:red",label=r"Solutions",facecolor="none")
+nat2bits = np.log2(np.exp(1))
+#ax.scatter(clean_mix1x2cz_vs_hz[:,0],clean_mix1x2cz_vs_hz[:,1],mk_size,marker="o",color="tab:red",label=r"Solutions",facecolor="none")
+ax.plot(clean_mix1x2cz_vs_hz[:,0]*nat2bits,clean_mix1x2cz_vs_hz[:,1]*nat2bits,marker="o",label=r"Wyner Clustering",color="tab:red",linewidth=2.0,linestyle="dashed",fillstyle="none",markersize=8.0)
 #ax.set_ylim([0,1])
-ax.set_ylabel(r"$I(X_1;X_2|Z)$",fontsize=fs_lab)
-ax.set_xlabel(r"$H(Z)$",fontsize=fs_lab)
+ax.set_ylabel(r"$I(X_1;X_2|Z)$ bits",fontsize=fs_lab)
+ax.set_xlabel(r"$H(Z)$ bits",fontsize=fs_lab)
 ax.legend(loc="best",fontsize=fs_leg)
 ax.tick_params(axis="both",labelsize=fs_tick)
 plt.tight_layout()

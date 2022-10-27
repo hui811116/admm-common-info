@@ -68,9 +68,9 @@ print(eval_result_left) #{"ce_loss":val,"accuracy":val}
 
 
 # let's pick some 
-n_pick = 4
+n_pick = 16
 #print(y_test[:n_pick])
-py = np.ones((d_nc,)) * 1e-2
+py = np.ones((d_nc,)) * 1e-7
 for idx in range(n_pick):
 	py[new_y_train[idx]]+=1
 py/=np.sum(py)
@@ -115,7 +115,7 @@ for ix1 in range(n_pick):
 		for iy in range(d_nc):
 			tmp_sum += py[iy] * px1cy[ix1,iy] * px2cy[ix2,iy]
 		px1x2[ix1,ix2] = tmp_sum
-px1x2 += 1e-4
+px1x2 += 1e-9
 px1x2 /= np.sum(px1x2)
 print(px1x2)
 cur_dir= os.getcwd()

@@ -124,7 +124,7 @@ def synToy():
 	return {"p_joint":px12,"px_list":[px1,px2],"p_cond":[px1cx2,px2cx1],"pycx_list":[px1cy,px2cy],"py":py}
 
 def synExpandToy(ny,nx,corr):
-	eps_min = 1e-3
+	eps_min = 1e-7
 	py = np.ones((ny,)) * (1/ny)
 	first_vec_ycx = np.ones((nx,))*(1/nx) - corr/nx
 	second_vec_ycx = np.ones((nx,)) * corr/nx

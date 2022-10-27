@@ -94,30 +94,19 @@ def admmHighDim(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		mean_grad_z = grad_z - np.mean(grad_z,axis=0)
 		ss_z = gd.naiveStepSize(pz,-mean_grad_z,ss_init,ss_scale)
 		if ss_z == 0:
-			#print("pz break")
 			break
 		grad_x1= -gamma  * (np.log(pzcx1)+1)*px1[None,:] - dual_x1 - penalty * err_x1
 		mean_grad_x1 = grad_x1 - np.mean(grad_x1,axis=0)
 		ss_x1 = gd.naiveStepSize(pzcx1,-mean_grad_x1*mask_pzcx1,ss_z,ss_scale)
 		if ss_x1 == 0:
-			#print("x1 break")
-			#print(pzcx1)
-			#print(mean_grad_x1)
-			# 
-			#print("after masking")
 			bad_cols = np.any(pzcx1 - mean_grad_x1 * 1e-9 >= 1,axis=0)
 			mask_pzcx1[:,bad_cols] = 0
-			#break
 		grad_x2 = -gamma * (np.log(pzcx2)+1)*px2[None,:] - dual_x2 - penalty * err_x2
 		mean_grad_x2 = grad_x2 - np.mean(grad_x2,axis=0)
 		ss_x2 = gd.naiveStepSize(pzcx2,-mean_grad_x2*mask_pzcx2,ss_x1,ss_scale)
 		if ss_x2 == 0:
-			#print("x2 break")
-			#print(pzcx2)
-			#print(mean_grad_x2)
 			bad_cols = np.any(pzcx2 - mean_grad_x2 * 1e-9 >= 1,axis=0)
 			mask_pzcx2[:,bad_cols] = 0
-			#break
 		new_pz = pz - mean_grad_z * ss_x2
 		new_pzcx1 = pzcx1 - mean_grad_x1 * ss_x2 * mask_pzcx1
 		new_pzcx2 = pzcx2 - mean_grad_x2 * ss_x2 * mask_pzcx2
@@ -137,24 +126,13 @@ def admmHighDim(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 			pz = new_pz
 			pzcx1 = new_pzcx1
 			pzcx2 = new_pzcx2
-	'''
-	if not conv_flag:
-		print(pz)
-		print(pzcx1)
-		print(pzcx2)
-		err_z = np.sum(pzcx1x2 * px1x2[None,:,:],axis=(1,2)) - pz
-		err_x1 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=2) - pzcx1
-		err_x2 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=1) - pzcx2
-		print(np.sum(np.abs(err_z)))
-		print(np.sum(np.abs(err_x1),axis=0))
-		print(np.sum(np.abs(err_x2),axis=0))
-		print(mask_pzcx1)
-		print(mask_pzcx2)
-	'''
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"dual_z":dual_z,"dual_x1":dual_x1,"dual_x2":dual_x2}
 
-'''
-def egSolver(px1x2,nz,gamma,maxiter,convthres,**kwargs):
+def stoLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
+	#ss_init = kwargs['ss_init']
+	#ss_scale= kwargs['ss_scale']
+	ss_fixed = kwargs['ss_init']
+	penalty = kwargs['penalty_coeff']
 	d_seed = None
 	if kwargs.get("seed",False):
 		d_seed = kwargs["seed"]
@@ -165,39 +143,110 @@ def egSolver(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	px1cx2 = px1x2 /px2[None,:]
 	px2cx1 = (px1x2/ px1[:,None]).T
 
-	# random initialization
-	pzcx1x2 = rng.random((nz,nx1,nx2))
-	pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
+	if "init_load" in kwargs.keys():
+		pzcx1x2 = kwargs["pzcx1x2"]
+		pz = kwargs["pz"]
+		pzcx1 = kwargs["pzcx1"]
+		pzcx2 = kwargs["pzcx2"]
+		dual_z = kwargs["dual_z"]
+		dual_x1 = kwargs["dual_x1"]
+		dual_x2 = kwargs["dual_x2"]
+	else:
+		# random initialization
+		pzcx1x2 = rng.random((nz,nx1,nx2))
+		pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
 
-	# precomputed variables
-	pz = np.sum(pzcx1x2 * px1x2[None,:,:],axis=(1,2))
-	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
-	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
+		# augmented variables
+		pz = np.sum(pzcx1x2 * px1x2[None,...],axis=(1,2))
+		pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,...],axis=2)
+		pzcx2 = np.sum(pzcx1x2 * px1cx2[None,...],axis=1)
 
-	itcnt = 0
+		# dual vars
+		dual_z = np.zeros(pz.shape)
+		dual_x1= np.zeros(pzcx1.shape)
+		dual_x2= np.zeros(pzcx2.shape)
+	# variables
+	mlog_pzcx1x2= -np.log(pzcx1x2)
+	mlog_pz = -np.log(pz)
+	mlog_pzcx1 = -np.log(pzcx1)
+	mlog_pzcx2 = -np.log(pzcx2)
+
 	conv_flag = False
+	itcnt = 0
 	while itcnt < maxiter:
-		itcnt += 1
-		# compute the raw probabilities
-		ker_z = ((1-gamma)/(1+gamma) * np.log(pz)[:,None] + gamma/(1+gamma) * np.log(pzcx1))[:,:,None]\
-				 + np.repeat(np.expand_dims(gamma/(1+gamma) * np.log(pzcx2),1),repeats=len(px1),axis=1)
-		new_pzcx1x2 = np.exp(ker_z)
-		new_pzcx1x2 /= np.sum(new_pzcx1x2,axis=0)
-		# update
-		pz = np.sum(new_pzcx1x2 * px1x2[None,:,:],axis=(1,2))
-		pzcx1 = np.sum(new_pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
-		pzcx2 = np.sum(new_pzcx1x2 * px1cx2[None,:,:],axis=1)
+		itcnt +=1 
+		# precomputing the error
+		exp_mlog_pzcx1x2 = np.exp(-mlog_pzcx1x2)
+		exp_mlog_pz = np.exp(-mlog_pz)
+		exp_mlog_pzcx1 = np.exp(-mlog_pzcx1)
+		exp_mlog_pzcx2 = np.exp(-mlog_pzcx2)
+		est_pz = np.sum(exp_mlog_pzcx1x2 * px1x2[None,...],axis=(1,2))
+		est_pzcx1 = np.sum(exp_mlog_pzcx1x2 * (px2cx1.T)[None,...],axis=2)
+		est_pzcx2 = np.sum(exp_mlog_pzcx1x2 * px1cx2[None,...],axis=1)
+		err_z = -np.log(est_pz) - mlog_pz
+		err_x1 = -np.log(est_pzcx1) - mlog_pzcx1
+		err_x2 = -np.log(est_pzcx2) - mlog_pzcx2
+		# gradient of pzcx1x2
+		grad_p = -(gamma+1)*exp_mlog_pzcx1x2*((1-mlog_pzcx1x2)*px1x2[None,...]) + \
+				(exp_mlog_pzcx1x2 *px1x2[None,...])* np.repeat( np.expand_dims(np.repeat(((dual_z+penalty*err_z)/est_pz)[:,None],repeats=nx1,axis=1),axis=-1),repeats=nx2,axis=-1) +\
+				(exp_mlog_pzcx1x2 *(px2cx1.T)[None,...]) * np.repeat( np.expand_dims((dual_x1+penalty*err_x1)/est_pzcx1,axis=-1),repeats=nx2,axis=-1) + \
+				(exp_mlog_pzcx1x2 *px1cx2[None,...]) * np.repeat(np.expand_dims((dual_x2+penalty*err_x2)/est_pzcx2,axis=1),repeats=nx1,axis=1)
+		raw_mlog_pzcx1x2 = mlog_pzcx1x2 - ss_fixed * grad_p
+		raw_mlog_pzcx1x2 -= np.amin(raw_mlog_pzcx1x2,axis=0)
+		raw_pzcx1x2 = np.exp(-raw_mlog_pzcx1x2) + 1e-9
+		new_mlog_pzcx1x2 =-np.log(raw_pzcx1x2 / np.sum(raw_pzcx1x2,axis=0,keepdims=True))
+
+		# update estimates
+		exp_mlog_pzcx1x2 = np.exp(-new_mlog_pzcx1x2)
+		est_pz = np.sum(exp_mlog_pzcx1x2*px1x2[None,...],axis=(1,2))
+		est_pzcx1 = np.sum(exp_mlog_pzcx1x2*(px2cx1.T)[None,...],axis=2)
+		est_pzcx2 = np.sum(exp_mlog_pzcx1x2*px1cx2[None,...],axis=1)
+		err_z = -np.log(est_pz) - mlog_pz
+		err_x1 = -np.log(est_pzcx1) - mlog_pzcx1
+		err_x2 = -np.log(est_pzcx2) - mlog_pzcx2
+
+		#dual updates
+		dual_z += penalty * err_z 
+		dual_x1 += penalty * err_x1
+		dual_x2 += penalty* err_x2
+		# grad_z
+		grad_z = (1-gamma)*exp_mlog_pz *(1-mlog_pz) - (dual_z+penalty*err_z)
+		raw_mlog_pz = mlog_pz - ss_fixed * grad_z
+		raw_mlog_pz -= np.amin(raw_mlog_pz)
+		raw_pz = np.exp(-raw_mlog_pz) + 1e-9
+		new_mlog_pz = -np.log(raw_pz/np.sum(raw_pz,keepdims=True))
+		# grad_x1
+		grad_x1 = gamma * exp_mlog_pzcx1 * (1-mlog_pzcx1) - (dual_x1 + penalty*err_x1)
+		raw_mlog_pzcx1 = mlog_pzcx1 - ss_fixed * grad_x1
+		raw_mlog_pzcx1 -= np.amin(raw_mlog_pzcx1,axis=0)
+		raw_pzcx1 = np.exp(-raw_mlog_pzcx1) + 1e-9
+		new_mlog_pzcx1 = -np.log(raw_pzcx1/np.sum(raw_pzcx1,axis=0,keepdims=True))
+		# grad_x2
+		grad_x2 = gamma * exp_mlog_pzcx2 * (1-mlog_pzcx2) - (dual_x2 + penalty * err_x2)
+		raw_mlog_pzcx2 = mlog_pzcx2 - ss_fixed * grad_x2
+		raw_mlog_pzcx2 -= np.amin(raw_mlog_pzcx2,axis=0)
+		raw_pzcx2 = np.exp(-raw_mlog_pzcx2) + 1e-9
+		new_mlog_pzcx2 = -np.log(raw_pzcx2/np.sum(raw_pzcx2,axis=0,keepdims=True))
+
 		# convergence
-		conv = 0.5 * np.sum(np.abs(new_pzcx1x2 - pzcx1x2),axis=0)
-		if np.all(conv < convthres):
+		conv_z = 0.5 * np.sum(np.fabs(est_pz - np.exp(-new_mlog_pz)))
+		conv_x1 = 0.5 * np.sum(np.fabs(est_pzcx1 - np.exp(-new_mlog_pzcx1)),axis=0)
+		conv_x2 = 0.5 * np.sum(np.fabs(est_pzcx2 - np.exp(-new_mlog_pzcx2)),axis=0)
+		if conv_z < convthres and np.all(conv_x1<convthres) and np.all(conv_x2<convthres):
 			conv_flag = True
 			break
 		else:
-			# update probabilities
-			pzcx1x2 = new_pzcx1x2
+			mlog_pzcx1x2 = new_mlog_pzcx1x2
+			mlog_pz = new_mlog_pz
+			mlog_pzcx1 = new_mlog_pzcx1
+			mlog_pzcx2 = new_mlog_pzcx2
+	pzcx1x2 = np.exp(-mlog_pzcx1x2)
+	pz = np.sum(pzcx1x2 * px1x2[None,...],axis=(1,2))
+	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,...],axis=2)
+	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,...],axis=1)
 
-	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2}
-'''
+	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"dual_z":dual_z,"dual_x1":dual_x1,"dual_x2":dual_x2}
+
 '''
 def distAdmmSolver(px1x2,nz,gamma1,gamma2,maxiter,convthres,**kwargs):
 	ss_init = kwargs['ss_init']
@@ -304,52 +353,6 @@ def distAdmmSolver(px1x2,nz,gamma1,gamma2,maxiter,convthres,**kwargs):
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1":pzcx1,"pzcx2":pzcx2,"pz":pz,"pzcx1x2":pzcx1x2,"dual_x1":dual_x1,"dual_x2":dual_x2}
 '''
 
-
-'''
-# WARNING: this is not a efficient algorithm (when |X| grows)
-#          because it simply projects a random point to the closest feasible point
-def expgdDetCom(px1x2,nz,gamma,maxiter,convthres,**kwargs):
-	d_seed = None
-	if kwargs.get("seed",False):
-		d_seed = kwargs["seed"]
-	rng = np.random.default_rng(d_seed)
-	(nx1,nx2) = px1x2.shape
-	px2 = np.sum(px1x2,0)
-	px1 = np.sum(px1x2,1)
-	px1cx2 = px1x2 /px2[None,:]
-	px2cx1 = (px1x2/ px1[:,None]).T
-
-	# random initialization
-	pzcx1x2 = rng.random((nz,nx1,nx2))
-	pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
-
-	# precomputed variables
-	pz = np.sum(pzcx1x2 * px1x2[None,:,:],axis=(1,2))
-	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
-	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
-	conv_flag = False
-	itcnt = 0
-	while itcnt < maxiter:
-		itcnt += 1
-
-		# compute the raw kernal
-		ker_z = (1/gamma -1 ) * np.log(pz)[:,None,None] + np.log(pzcx1)[:,:,None] + np.repeat(np.expand_dims(np.log(pzcx2),1),repeats=len(px1),axis=1)
-		# forcing to deterministic by using argmax
-		new_pzcx1x2 = ker_z == np.amax(ker_z,axis=0,keepdims=True)
-		new_pzcx1x2 = new_pzcx1x2.astype("float32") + 1e-7
-		new_pzcx1x2/=np.sum(new_pzcx1x2,axis=0)
-		# 
-		pz = np.sum(new_pzcx1x2 * px1x2[None,:,:],axis=(1,2))
-		pzcx1 = np.sum(new_pzcx1x2 * px1cx2[None,:,:],axis=2)
-		pzcx2 = np.sum(new_pzcx1x2 * (px2cx1.T)[None,:,:],axis=1)
-		conv = 0.5 * np.sum(np.abs(new_pzcx1x2 - pzcx1x2),axis=0)
-		if np.all(conv < convthres):
-			conv_flag = True
-			break
-		else:
-			pzcx1x2 = new_pzcx1x2
-	return {"conv":conv_flag,"niter":itcnt,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"pzcx1x2":pzcx1x2}
-'''
 def detComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	ss_init = kwargs["ss_init"]
 	ss_scale = kwargs["ss_scale"]
@@ -439,6 +442,9 @@ def detComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		dual_x2 += penalty * err_x2
 
 		# grad z, compute (1-gamma)H(Z)
+		if not  np.all(pz == pz):
+			print(pz)
+			sys.exit("bug")
 		grad_z = -(1-gamma) * (np.log(pz)+1) - dual_z - penalty * err_z
 		mean_grad_z = grad_z - np.mean(grad_z,axis=0)
 		# grad x1, compute -gamma H(Z|X_1)
@@ -467,7 +473,7 @@ def detComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 			#break
 			bad_cols = np.any(pzcx2 - mean_grad_x2 * 1e-7 >= 1.0, axis=0)
 			mask_pzcx2[:,bad_cols] = 0
-		new_pz = pz - mean_grad_z * ss_x2
+		new_pz = pz - mean_grad_z * ss_x2 * mask_pz
 		new_pzcx1 = pzcx1 - mean_grad_x1 * ss_x2 * mask_pzcx1
 		new_pzcx2 = pzcx2 - mean_grad_x2 * ss_x2 * mask_pzcx2
 
@@ -480,9 +486,9 @@ def detComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		#print(np.sum(np.abs(err_z)))
 		#print(np.sum(np.abs(err_x1),axis=0))
 		#print(np.sum(np.abs(err_x2),axis=0))
-		conv_z = 0.5 *np.sum(np.abs(err_z))
-		conv_x1 = 0.5 *np.sum(np.abs(err_x1),axis=0)
-		conv_x2 = 0.5 * np.sum(np.abs(err_x2),axis=0)
+		conv_z = 0.5 *np.sum(np.abs(err_z * mask_pz))
+		conv_x1 = 0.5 *np.sum(np.abs(err_x1 * mask_pzcx1),axis=0)
+		conv_x2 = 0.5 * np.sum(np.abs(err_x2 * mask_pzcx2),axis=0)
 		if conv_z<convthres and np.all(conv_x1<convthres) and np.all(conv_x2<convthres):
 			conv_flag = True
 			break
@@ -747,6 +753,11 @@ def tfStoComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	#print(pzcx1.shape)
 	#print(pzcx2.shape)
 	#sys.exit()
+	# masks
+	mask_z = tf.ones(pz.shape,dtype=tf.float64)
+	mask_x1 = tf.ones(pzcx1.shape,dtype=tf.float64)
+	mask_x2 = tf.ones(pzcx2.shape,dtype=tf.float64)
+	mask_p = tf.ones(pzcx1x2.shape,dtype=tf.float64)
 	conv_flag = False
 	itcnt = 0
 	while itcnt < maxiter:
@@ -771,10 +782,12 @@ def tfStoComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		#mean_grad_p = grad_p - np.mean(grad_p,axis=0)
 		mean_grad_p = grad_p - tf.reduce_mean(grad_p,axis=0)
 		#ss_p = gd.naiveStepSize(pzcx1x2,-mean_grad_p,ss_init,ss_scale)
-		ss_p = gd.tfNaiveSS(pzcx1x2,-mean_grad_p,ss_init,ss_scale)
+		ss_p = gd.tfNaiveSS(pzcx1x2,-mean_grad_p * mask_p,ss_init,ss_scale)
 		if ss_p == 0:
-			break
-		new_pzcx1x2 = pzcx1x2 - mean_grad_p * ss_p
+			bad_fibers = tf.reduce_any(pzcx1x2 - mean_grad_p * 1e-9 >= 1.0, axis=0)
+			pzcx1x2[:,bad_fibers] = 0
+			#break
+		new_pzcx1x2 = pzcx1x2 - mean_grad_p * ss_p * mask_p
 		# new errors
 		#err_z = np.sum(new_pzcx1x2 * px1x2[None,:,:],axis=(1,2)) - pz
 		#err_x1= np.sum(new_pzcx1x2 * (px2cx1.T)[None,:,:],axis=2) - pzcx1
@@ -797,24 +810,31 @@ def tfStoComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		mean_grad_x1 = grad_x1 - tf.reduce_mean(grad_x1,axis=0)
 		grad_x2 = -gamma * (tf.math.log(pzcx2)+1)*px2[None,:] - dual_x2 - penalty * err_x2
 		mean_grad_x2 = grad_x2 - tf.reduce_mean(grad_x2,axis=0)
-		ss_z = gd.tfNaiveSS(pz,-mean_grad_z,ss_init,ss_scale)
+		ss_z = gd.tfNaiveSS(pz,-mean_grad_z * mask_z,ss_init,ss_scale)
 		if ss_z == 0:
-			break
+			#break
+			if tf.reduce_any(pz - mean_grad_z * 1e-9 >= 1.0):
+				mask_z = tf.zeros(pz.shape)
+			
 		#grad_x1= -gamma  * (np.log(pzcx1)+1) - dual_x1 - penalty * err_x1
 		#mean_grad_x1 = grad_x1 - np.mean(grad_x1,axis=0)
 		#ss_x1 = gd.naiveStepSize(pzcx1,-mean_grad_x1,ss_z,ss_scale)
-		ss_x1 = gd.tfNaiveSS(pzcx1,-mean_grad_x1,ss_z,ss_scale)
+		ss_x1 = gd.tfNaiveSS(pzcx1,-mean_grad_x1 * mask_x1,ss_z,ss_scale)
 		if ss_x1 == 0:
-			break
+			#break
+			bad_cols = tf.reduce_any(pzcx1 - mean_grad_x1 * 1e-9 >= 1.0)
+			mask_x1[:,bad_cols] = 0 
 		#grad_x2 = -gamma * (np.log(pzcx2)+1) - dual_x2 - penalty * err_x2
 		#mean_grad_x2 = grad_x2 - np.mean(grad_x2,axis=0)
 		#ss_x2 = gd.naiveStepSize(pzcx2,-mean_grad_x2,ss_x1,ss_scale)
-		ss_x2 = gd.tfNaiveSS(pzcx2,-mean_grad_x2,ss_x1,ss_scale)
+		ss_x2 = gd.tfNaiveSS(pzcx2,-mean_grad_x2 * mask_x2,ss_x1,ss_scale)
 		if ss_x2 == 0:
-			break
-		new_pz = pz - mean_grad_z * ss_x2
-		new_pzcx1 = pzcx1 - mean_grad_x1 * ss_x2
-		new_pzcx2 = pzcx2 - mean_grad_x2 * ss_x2
+			#break
+			bad_cols = tf.reduce_any(pzcx2 - mean_grad_x2 * 1e-9 >= 1.0)
+			mask_x2[:,bad_cols] = 0
+		new_pz = pz - mean_grad_z * ss_x2 * mask_z
+		new_pzcx1 = pzcx1 - mean_grad_x1 * ss_x2 * mask_x1
+		new_pzcx2 = pzcx2 - mean_grad_x2 * ss_x2 * mask_x2
 		# new errors
 		#err_z = np.sum(new_pzcx1x2 * px1x2[None,:,:],axis=(1,2)) - new_pz
 		#err_x1= np.sum(new_pzcx1x2 * (px2cx1.T)[None,:,:],axis=2) - new_pzcx1
@@ -826,9 +846,9 @@ def tfStoComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		#conv_z = np.sum(np.abs(err_z))
 		#conv_x1 = np.sum(np.abs(err_x1),axis=0)
 		#conv_x2 = np.sum(np.abs(err_x2),axis=0)
-		conv_z = 0.5*tf.reduce_sum(tf.math.abs(err_z))
-		conv_x1 = 0.5*tf.reduce_sum(tf.math.abs(err_x1),axis=0)
-		conv_x2 = 0.5*tf.reduce_sum(tf.math.abs(err_x2),axis=0)
+		conv_z = 0.5*tf.reduce_sum(tf.math.abs(err_z * mask_z))
+		conv_x1 = 0.5*tf.reduce_sum(tf.math.abs(err_x1 * mask_x1),axis=0)
+		conv_x2 = 0.5*tf.reduce_sum(tf.math.abs(err_x2 * mask_x2),axis=0)
 		if tf.reduce_all(conv_z< convthres) and tf.reduce_all(conv_x1<convthres) and tf.reduce_all(conv_x2<convthres):
 			conv_flag = True
 			break
@@ -842,4 +862,133 @@ def tfStoComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 			"pz":pz.numpy(),"pzcx1":pzcx1.numpy(),"pzcx2":pzcx2.numpy(),
 			"dual_z":dual_z.numpy(),"dual_x1":dual_x1.numpy(),"dual_x2":dual_x2.numpy()}
 
+# logadmm for deterministic case
+def detLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
+	#ss_init = kwargs["ss_init"]
+	#ss_scale = kwargs["ss_scale"]
+	ss_fixed = kwargs['ss_init']
+	penalty = kwargs["penalty_coeff"]
+	d_seed = None
+	if kwargs.get("seed",False):
+		d_seed = kwargs["seed"]
+	rng = np.random.default_rng(d_seed)
+	(nx1,nx2) = px1x2.shape
+	px2 = np.sum(px1x2,0)
+	px1 = np.sum(px1x2,1)
+	px1cx2 = px1x2 /px2[None,:]
+	px2cx1 = (px1x2/ px1[:,None]).T
 
+	if "init_load" in kwargs.keys():
+		pzcx1x2 = kwargs['pzcx1x2']
+		pz = kwargs['pz']
+		pzcx1 = kwargs['pzcx1']
+		pzcx2 = kwargs['pzcx2']
+		dual_z = kwargs['dual_z']
+		dual_x1 = kwargs['dual_x1']
+		dual_x2 = kwargs['dual_x2']
+	else:
+		# random initialization
+		pzcx1x2 = rng.random((nz,nx1,nx2),dtype="float64")
+		pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
+
+		# precomputed variables
+		pz = np.sum(pzcx1x2 * px1x2[None,...],axis=(1,2))
+		pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,...],axis=2)
+		pzcx2 = np.sum(pzcx1x2 * px1cx2[None,...],axis=1)
+
+		# dual variables
+		dual_z = np.zeros(pz.shape)
+		dual_x1 = np.zeros(pzcx1.shape)
+		dual_x2 = np.zeros(pzcx2.shape)
+	mlog_pzcx1x2 = -np.log(pzcx1x2)
+	mlog_pzcx1   = -np.log(pzcx1)
+	mlog_pzcx2   = -np.log(pzcx2)
+	mlog_pz      = -np.log(pz) 
+	itcnt = 0
+	conv_flag= False
+	while itcnt < maxiter:
+		itcnt +=1
+		# precomputing error and exponentials
+		exp_mlog_pz = np.exp(-mlog_pz)
+		exp_mlog_pzcx1 = np.exp(-mlog_pzcx1)
+		exp_mlog_pzcx2 = np.exp(-mlog_pzcx2)
+		exp_mlog_pzcx1x2 = np.exp(-mlog_pzcx1x2)
+		est_pzcx1 = np.sum(exp_mlog_pzcx1x2 * (px2cx1.T)[None,...],axis=2)
+		est_pzcx2 = np.sum(exp_mlog_pzcx1x2 * px1cx2[None,...],axis=1)
+		est_pz = np.sum(exp_mlog_pzcx1x2 * px1x2[None,...],axis=(1,2))
+
+		# errors
+		err_z = -np.log(est_pz)-mlog_pz
+		err_x1 = -np.log(est_pzcx1)-mlog_pzcx1
+		err_x2 = -np.log(est_pzcx2)-mlog_pzcx2
+
+		# gradient of z|x1x2
+		grad_p = -gamma*exp_mlog_pzcx1x2*(1-mlog_pzcx1x2)*px1x2[None,...] \
+				+(exp_mlog_pzcx1x2 * (px2cx1.T)[None,...])*(( dual_x1 + penalty * err_x1)[...,None]/est_pzcx1[...,None]) \
+				+(exp_mlog_pzcx1x2 * px1cx2[None,...])*np.repeat(np.expand_dims((dual_x2 + penalty* err_x2) /est_pzcx2,axis=1),repeats=nx1,axis=1)\
+				+(exp_mlog_pzcx1x2*px1x2[None,...])*np.repeat(np.expand_dims(np.repeat(((dual_z + penalty* err_z) /est_pz)[:,None],repeats=nx1,axis=1),axis=2),repeats=nx2,axis=2)
+		# projection, pzcx1x2
+		raw_mlog_pzcx1x2 = mlog_pzcx1x2 - grad_p * ss_fixed
+		raw_mlog_pzcx1x2 -= np.amin(raw_mlog_pzcx1x2,axis=0)
+		raw_pzcx1x2 = np.exp(-raw_mlog_pzcx1x2) + 1e-9
+		new_mlog_pzcx1x2 = -np.log(raw_pzcx1x2/np.sum(raw_pzcx1x2,axis=0))
+
+		# update temp vars
+		exp_mlog_pzcx1x2 = np.exp(-new_mlog_pzcx1x2)
+		est_pzcx1 = np.sum(exp_mlog_pzcx1x2 * (px2cx1.T)[None,...],axis=2)
+		est_pzcx2 = np.sum(exp_mlog_pzcx1x2 * px1cx2[None,...],axis=1)
+		est_pz = np.sum(exp_mlog_pzcx1x2 * px1x2[None,...],axis=(1,2))
+
+		# update errors
+		err_z = -np.log(est_pz)-mlog_pz
+		err_x1 = -np.log(est_pzcx1)-mlog_pzcx1
+		err_x2 = -np.log(est_pzcx2)-mlog_pzcx2
+
+		# update dual variables
+		dual_z += penalty * err_z
+		dual_x1 += penalty * err_x1
+		dual_x2 += penalty * err_x2
+
+		# gradient of z
+		grad_z = (gamma-1) * exp_mlog_pz*(1-mlog_pz) - (dual_z+penalty * err_z)
+		# z projection
+		raw_mlog_pz = mlog_pz - grad_z * ss_fixed
+		raw_mlog_pz -= np.amin(raw_mlog_pz)
+		raw_pz = np.exp(-raw_mlog_pz) + 1e-9
+		new_mlog_pz = -np.log(raw_pz/np.sum(raw_pz))
+
+		# gradient of x1
+		grad_x1 = gamma * exp_mlog_pzcx1*(1-mlog_pzcx1) - (dual_x1 + penalty * err_x1)
+		# x1 projection
+		raw_mlog_pzcx1 = mlog_pzcx1 - grad_x1 * ss_fixed
+		raw_mlog_pzcx1 -= np.amin(raw_mlog_pzcx1,axis=0)
+		raw_pzcx1 = np.exp(-raw_mlog_pzcx1) + 1e-9
+		new_mlog_pzcx1 = -np.log(raw_pzcx1/np.sum(raw_pzcx1,axis=0))
+
+		# gradient of x2
+		grad_x2 = gamma * exp_mlog_pzcx2*(1-mlog_pzcx2) - (dual_x2 + penalty*err_x2)
+		# x2 projection
+		raw_mlog_pzcx2 = mlog_pzcx2 = grad_x2 * ss_fixed
+		raw_mlog_pzcx2 -= np.amin(raw_mlog_pzcx2,axis=0)
+		raw_pzcx2 = np.exp(-raw_mlog_pzcx2) + 1e-9
+		new_mlog_pzcx2 = -np.log(raw_pzcx2 / np.sum(raw_pzcx2,axis=0))
+
+		# convergence # back to probability
+		conv_z = 0.5 * np.sum(np.fabs(est_pz-np.exp(-new_mlog_pz)))
+		conv_x1 = 0.5 * np.sum(np.fabs(est_pzcx1-np.exp(-new_mlog_pzcx1)),axis=0)
+		conv_x2 = 0.5 * np.sum(np.fabs(est_pzcx2-np.exp(-new_mlog_pzcx2)),axis=0)
+		if np.all(conv_z < convthres) and np.all(conv_x1<convthres) and np.all(conv_x2 < convthres):
+			conv_flag = True
+			break
+		else:
+			mlog_pz = new_mlog_pz
+			mlog_pzcx1 = new_mlog_pzcx1
+			mlog_pzcx2 = new_mlog_pzcx2
+			mlog_pzcx1x2 = new_mlog_pzcx1x2
+	pzcx1x2 = np.exp(-mlog_pzcx1x2)
+	pz = np.sum(pzcx1x2 * px1x2[None,...],axis=(1,2))
+	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,...],axis=2)
+	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,...],axis=1)
+	return {"conv":conv_flag,"niter":itcnt,
+			"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,
+			"dual_z":dual_z,"dual_x1":dual_x1,"dual_x2":dual_x2}
