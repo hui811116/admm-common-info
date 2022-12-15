@@ -992,3 +992,220 @@ def detLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	return {"conv":conv_flag,"niter":itcnt,
 			"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,
 			"dual_z":dual_z,"dual_x1":dual_x1,"dual_x2":dual_x2}
+
+'''
+def wynerLogADMM(px1x2,nz,gamma,maxiter,convthres,**kwargs):
+	ss_fixed = kwargs['ss_init']
+	penalty = kwargs["penalty_coeff"]
+	d_seed = None
+	if kwargs.get("seed",False):
+		d_seed = kwargs["seed"]
+	rng = np.random.default_rng(d_seed)
+	(nx1,nx2) = px1x2.shape
+	px2 = np.sum(px1x2,0)
+	px1 = np.sum(px1x2,1)
+	px1cx2 = px1x2 /px2[None,:]
+	px2cx1 = (px1x2/ px1[:,None]).T
+
+	if "init_load" in kwargs.keys():
+		pzcx1x2 = kwargs['pzcx1x2']
+		pz = kwargs['pz']
+		pzcx1 = kwargs['pzcx1']
+		px1cz = ((pzcx1 * px1[None,:])/np.sum(pzcx1*px1[None,:],axis=1,keepdims=True)).T
+
+		pzcx2 = kwargs['pzcx2']
+		px2cz = ((pzcx2 * px2[None,:])/np.sum(pzcx2*px2[None,:],axis=1,keepdims=True)).T
+
+		#dual_z = kwargs['dual_z']
+		dual_x12 = kwargs['dual_x12']
+		#dual_x2 = kwargs['dual_x2']
+	else:
+		# random initialization
+		pzcx1x2 = rng.random((nz,nx1,nx2),dtype="float64")
+		pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
+
+		# precomputed variables
+		pz = np.sum(pzcx1x2 * px1x2[None,...],axis=(1,2))
+		pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,...],axis=2)
+		px1cz = ((pzcx1 * px1[None,:])/np.sum(pzcx1*px1[None,:],axis=1,keepdims=True)).T
+
+		pzcx2 = np.sum(pzcx1x2 * px1cx2[None,...],axis=1)
+		px2cz = ((pzcx2 * px2[None,:])/np.sum(pzcx2*px2[None,:],axis=1,keepdims=True)).T
+
+		# dual variables
+		#dual_z = np.zeros(pz.shape)
+		dual_x12 = np.zeros(px1x2.shape)
+		#dual_x2 = np.zeros(pzcx2.shape)
+	#mlog_pzcx1x2 = -np.log(pzcx1x2)
+	#mlog_pzcx1   = -np.log(pzcx1)
+	#mlog_pzcx2   = -np.log(pzcx2)
+	const_mlog_px12 = -np.log(px1x2)
+	mlog_pz      = -np.log(pz)
+	mlog_px1cz = -np.log(px1cz)
+	mlog_px2cz = -np.log(px2cz)
+	itcnt = 0
+	conv_flag = False
+	while itcnt < maxiter:
+		itcnt +=1
+		# precompute the probability estimates
+		est_pz = np.exp(-mlog_pz)
+		est_px1cz = np.exp(-mlog_px1cz)
+		est_px2cz = np.exp(-mlog_px2cz)
+		est_px1cz_repeat = np.repeat(np.expand_dims(est_px1cz,axis=1),repeats=nx2,axis=1)
+		est_px2cz_repeat = np.repeat(np.expand_dims(est_px2cz,axis=0),repeats=nx1,axis=0)
+		est_px1x2 = np.sum(est_px1cz_repeat * est_px2cz_repeat * est_pz[...,:],axis=2)
+		#
+		err_x12 = -np.log(est_px1x2) - const_mlog_px12
+		# find the gradient of z
+		# FIXME
+		# write a raw version, make it log-space afterward
+		grad_z = -np.sum(est_px1cz*est_pz[None,:]*mlog_px1cz,axis=0)\
+				 -np.sum(est_px2cz*est_pz[None,:]*mlog_px2cz,axis=0)\
+				 -np.sum((np.log(est_px1x2)+1)[:,:,None] * est_px1cz_repeat * est_px2cz_repeat * est_pz[...,:],axis=(0,1)) \
+				 +np.sum(est_px1cz_repeat*est_px2cz_repeat*est_pz[...,:]/est_px1x2[...,None] * (dual_x12+penalty*err_x12),axis=(0,1))
+		
+		raw_mlog_pz = mlog_pz - ss_init * grad_z
+		min_mlog_pz = np.amin(raw_mlog_pz)
+		min_mlog_pz = np.where(min_mlog_pz<=0,min_mlog_pz,0)
+		prj_mlog_pz = raw_mlog_pz - min_mlog_pz 
+		exp_mlog_pz = np.exp(-prj_mlog_pz)+ 1e-9 # smoothness
+		est_pz = exp_mlog_pz / np.sum(exp_mlog_pz) # update est_pz 
+		new_mlog_pz = -np.log(est_pz)
+
+		# update estimates
+		est_px1x2 = np.sum(est_px1cz_repeat*est_px2cz_repeat*est_pz[...,:],axis=2) # update est_px1x2
+		err_x12 = -np.log(est_px1x2) - const_mlog_px12 # update error 
+		# update the dual variables
+		dual_x12 += penalty * err_x12
+		# step
+		grad_x1 = -est_px1cz*est_pz[None,:]*(1-mlog_px1cz)\
+				  + np.sum(est_px1cz_repeat*est_px2cz_repeat*est_pz[...,:] * (np.log(est_px1x2)+1)[...,None],axis=1)\
+				  + np.sum(est_px1cz_repeat*est_px2cz_repeat*est_pz[...,:]/est_px1x2[...,None]*(dual_x12+penalty*err_x12),axis=1)
+		
+		raw_mlog_px1cz = mlog_pzcx1 - ss_init * grad_x1
+		min_mlog_px1cz = np.amin(raw_mlog_px1cz,axis=0)
+		min_mlog_px1cz = np.where(min_mlog_px1cz<=0.0,min_mlog_px1cz,np.zeros((nx1,)))
+		prj_mlog_px1cz = raw_mlog_px1cz - min_mlog_px1cz[None,:]
+		exp_mlog_px1cz = np.exp(-prj_mlog_px1cz) + 1e-9
+		est_px1cz = exp_mlog_px1cz / np.sum(exp_mlog_px1cz,axis=0,keepdims=True) # update est_px1cz
+		new_mlog_px1cz = -np.log(new_px1cz)
+		#
+		#est_px1cz_repeat = np.repeat(np.expand_dims(est_px1cz,axis=1),repeats=nx2,axis=1) # update x1 repeat
+		#est_px1x2 = np.sum(est_px1cz_repeat*est_px2cz_repeat*est_pz[...,:],axis=2) # update joint
+		#err_x12 = -np.log(est_px1x2) - const_mlog_px12 # update error
+
+		grad_x2 = -est_px2cz*est_pz[None,:]*(1-mlog_px2cz)\
+				  + np.sum(est_px1cz_repeat*est_px2cz_repeat*est_pz[...,:]*(np.log(est_px1x2)+1)[...,None],axis=1)\
+				  + np.sum(est_px1cz_repeat*est_px2cz_repeat*est_pz[...,:]/est_px1x2[...,None]*(dual_x12+penalty*err_x12),axis=1)
+
+		raw_mlog_px2cz = mlog_pzcx2 - ss_init*grad_x2
+		min_mlog_px2cz = np.amin(raw_mlog_px2cz,axis=0)
+		min_mlog_px2cz = np.where(min_mlog_px2cz<=0.0,min_mlog_px2cz,np.zeros((nx2,)))
+		prj_mlog_px2cz = raw_mlog_px2cz - min_mlog_px2cz[None,:]
+		exp_mlog_px2cz = np.exp(-prj_mlog_px2cz) + 1e-9
+		est_px2cz = exp_mlog_px2cz / np.sum(exp_mlog_px2cz,axis=0,keepdims=True)
+		new_mlog_px2cz = -np.log(est_px2cz)
+
+		# update repeats
+		est_px1cz_repeat = np.repeat(np.expand_dims(est_px1cz,axis=1),repeats=nx2,axis=1)
+		est_px2cz_repeat = np.repeat(np.expand_dims(est_px2cz,axis=0),repeats=nx1,axis=0)
+		est_px1x2 = np.sum(est_px1cz_repeat*est_px2cz_repeat*est_px[...,:],axis=2)
+		err_x12 = -np.log(est_px1x2) - const_mlog_px12
+		# convergence condition
+		conv_x12 = np.sum(np.abs(err_x12)) #total variation
+		if conv_x12 <= convthres:
+			conv_flag = True
+			break
+		else:
+			mlog_pz = new_mlog_pz
+			mlog_px1cz = new_mlog_px1cz
+			mlog_px2cz = new_mlog_px2cz
+	# calculate the required metrics
+	out_pz = np.exp(-mlog_pz)
+	out_px1cz = np.exp(-mlog_px1cz)
+	out_px2cz = np.exp(-mlog_px2cz)
+	out_pzcx1 = ((out_px1cz * out_pz[None,:])/np.sum(out_px1cz * out_pz[None,:],axis=0,keepdims=True)).T
+	out_pzcx2 = ((out_px2cz * out_pz[None,:])/np.sum(out_px2cz * out_pz[None,:],axis=0,keepdims=True)).T
+	# pzcx12
+	out_repeat_px1cz = np.repeat(np.expand_dims(out_px1cz,axis=1),repeats=nx2,axis=1)
+	out_repeat_px2cz = np.repeat(np.expand_dims(out_px2cz,axis=0),repeats=nx1,axis=0)
+	out_est_px12 = np.sum(out_repeat_px1cz*out_repeat_px1cz*out_pz[...,:],axis=2,keepdims=True)
+	out_pzcx12 = out_repeat_px1cz*out_repeat_px1cz*out_pz[...,:]/out_est_px12
+
+	return {"conv":conv_flag,"niter":itcnt,
+			"pzcx1x2":out_pzcx12,"pzcx1":out_pzcx1,"pzcx2":out_pzcx2,"pz":out_pz,
+			"dual_x12":dual_x12,}
+'''
+
+# compared algorithms
+# gradient based methods
+# Sula, E.; Gastpar, M.C. Common Information Components Analysis. Entropy 2021, 23, 151.
+# https://doi.org/10.3390/e23020151
+
+# in its relaxed Wyner common information, the gradients are taken w.r.t. the (conditional) mutual information
+# which can be equivalently expressed as derivative to a combination of entropy and conditional entropy functions.
+
+def stoGradComp(px1x2,nz,gamma,maxiter,convthres,**kwargs):
+	ss_init = kwargs['ss_init']
+	ss_scale = kwargs['ss_scale']
+	d_seed = None
+	if kwargs.get("seed",False):
+		d_seed = kwargs['seed']
+	rng = np.random.default_rng(d_seed)
+	(nx1,nx2) = px1x2.shape
+	px1 = np.sum(px1x2,0)
+	px2 = np.sum(px1x2,1)
+	px1cx2 = px1x2/px2[None,:]
+	px2cx1 = (px1x2/px1[:,None]).T
+	if "init_load" in kwargs.keys():
+		pzcx1x2 = kwargs['pzcx1x2']
+	else:
+		pzcx1x2 = rng.random((nz,nx1,nx2))
+		pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
+
+	mask_pzcx1x2 = np.ones(pzcx1x2.shape)
+	itcnt =0 
+	conv_flag = False
+	#loss_cnew = 1.0
+	#loss_cold = 0.0
+	while itcnt < maxiter:
+		itcnt += 1
+		# auxiliary variables
+		pz = np.sum(pzcx1x2*px1x2[None,:,:],axis=(1,2))
+		pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
+		pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
+		grad_p = ((1+gamma) * (np.log(pzcx1x2)+1)) * px1x2[None,:,:]\
+					-(1-gamma) *( (np.log(pz) + 1)[:,None,None] * px1x2[None,:,:])\
+					-gamma * (np.log(pzcx1) +1)[:,:,None] * px1x2[None,:,:] \
+					-gamma * (np.log(np.repeat(np.expand_dims(pzcx2,axis=1),repeats=len(px1),axis=1))+1)*px1x2[None,:,:]
+		mean_grad_p = grad_p - np.mean(grad_p,axis=0)
+		ss_p = gd.naiveStepSize(pzcx1x2,-mean_grad_p * mask_pzcx1x2,ss_init,ss_scale)
+		if ss_p == 0:
+			break
+			#bad_fibers = np.any(pzcx1x2 - mean_grad_p* 1e-9 >=1,axis=0)
+			#mask_pzcx1x2[:,bad_fibers]=0
+		new_pzcx1x2 = pzcx1x2 - mean_grad_p * ss_p * mask_pzcx1x2
+		# the compared method project the obtained encoder to the wyner setting
+		new_pz = np.sum(new_pzcx1x2 * px1x2[None,:,:],axis=(1,2))
+		ent_z = -np.sum(new_pz*np.log(new_pz))
+		ent_pzcx1x2 = -np.sum(new_pzcx1x2 * px1x2[None,:,:] * np.log(new_pzcx1x2))
+		# the convergence criterion of the reference uses
+		conv_z = 0.5 * np.sum(np.fabs(new_pzcx1x2 - pzcx1x2),axis=0) # total variation
+		if np.all(conv_z<convthres):
+			conv_flag=True
+			break
+		else:
+			pzcx1x2 = new_pzcx1x2
+		'''
+		loss_cold = loss_cnew
+		loss_cnew = ent_z - ent_pzcx1x2
+		if np.fabs(loss_cnew - loss_cold) < convthres:
+			conv_flag=True
+			break
+		else:
+			pzcx1x2 = new_pzcx1x2
+		'''
+	pz = np.sum(pzcx1x2*px1x2[None,:,:],axis=(1,2))
+	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
+	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
+	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2}

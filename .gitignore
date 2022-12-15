@@ -130,8 +130,9 @@ dmypy.json
 
 
 # Output
-.mat
-.txt
-.np
-.pkl
+*.mat
+*.txt
+*.npy
+*.pkl
+*.csv
 

@@ -10,7 +10,7 @@ import evaluation as ev
 import datetime
 
 parser = argparse.ArgumentParser()
-parser.add_argument("method",choices=["admmgd","tfadmmgd","logadmm"])
+parser.add_argument("method",choices=["admmgd","tfadmmgd","logadmm","gdbaseline"])
 parser.add_argument("--penalty",type=float,default=64.0,help="penalty coefficient of the ADMM solver")
 parser.add_argument("--maxiter",type=int,default=50000,help="maximum iteration before termination")
 parser.add_argument("--convthres",type=float,default=1e-6,help="convergence threshold")
@@ -66,6 +66,8 @@ elif args.method == "tfadmmgd":
 	algrun = alg.tfStoComAdmm
 elif args.method == "logadmm":
 	algrun = alg.stoLogAdmm
+elif args.method == "gdbaseline":
+	algrun = alg.stoGradComp
 else:
 	sys.exit("undefined method {:}".format(args.method))
 
