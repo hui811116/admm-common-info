@@ -11,10 +11,10 @@ import datetime
 
 parser = argparse.ArgumentParser()
 parser.add_argument("method",choices=["admmgd","tfadmmgd","logadmm","gdbaseline","loggd",'logdrs'])
-parser.add_argument("--penalty",type=float,default=64.0,help="penalty coefficient of the ADMM solver")
-parser.add_argument("--maxiter",type=int,default=50000,help="maximum iteration before termination")
+parser.add_argument("--penalty",type=float,default=128.0,help="penalty coefficient of the ADMM solver")
+parser.add_argument("--maxiter",type=int,default=75000,help="maximum iteration before termination")
 parser.add_argument("--convthres",type=float,default=1e-6,help="convergence threshold")
-parser.add_argument("--nrun",type=int,default=20,help="number of trail of each simulation")
+parser.add_argument("--nrun",type=int,default=10,help="number of trail of each simulation")
 parser.add_argument("--ss_init",type=float,default=1e-2,help="step size initialization")
 parser.add_argument("--ss_scale",type=float,default=0.25,help="step size scaling")
 parser.add_argument("--output",type=str,default="unsu_mv_output",help="output filename")
@@ -23,9 +23,9 @@ parser.add_argument("--ny",type=int,default=2,help="number of uniform hidden lab
 parser.add_argument("--nb",type=int,default=2,help="number of blocks for observations")
 parser.add_argument("--corr",type=float,default=0,help="cyclic observation uncertainty given a label")
 parser.add_argument("--gamma_min",type=float,default=0.8,help="minimum gamma value")
-parser.add_argument("--gamma_max",type=float,default=2.0,help="maximum gamma value")
+parser.add_argument("--gamma_max",type=float,default=10.0,help="maximum gamma value")
 # the maximum value is always 1. otherwise a different problem
-parser.add_argument("--gamma_num",type=int,default=20,help="number of gamma values")
+parser.add_argument("--gamma_num",type=int,default=10,help="number of gamma values")
 parser.add_argument("--encoder",action="store_true",default=False,help="storing all the encoders found")
 
 args = parser.parse_args()
@@ -47,7 +47,7 @@ prob_cond = data_dict["p_cond"]
 px1cx2 = prob_cond[0]
 px2cx1 = prob_cond[1]
 # TODO: what if |Z| neq |Y|
-nz = len(data_dict["py"]) # FIXME: for "condindp" dataset, |Y|=3
+#nz = len(data_dict["py"]) # FIXME: for "condindp" dataset, |Y|=3
 
 #gamma_range = np.geomspace(1,args.gamma_max,num=args.gamma_num)
 gamma_range = np.geomspace(args.gamma_min,args.gamma_max,num=args.gamma_num)
@@ -77,7 +77,8 @@ else:
 
 encoder_dict = {}
 
-nz_set = [nz]
+#nz_set = [nz]
+nz_set = np.arange(2,len(px1)*len(px2)+1,1)
 res_all = np.zeros((len(gamma_range)*args.nrun*len(nz_set),12)) # gamma, nidx, niter, conv,nz, entz, mizx1,mizx2,cmizx1cx2, cmizx2cx1, loss, cmix1x2cz
 rec_idx = 0
 for gidx ,gamma in enumerate(gamma_range):

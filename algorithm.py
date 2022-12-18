@@ -931,7 +931,7 @@ def detLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		raw_mlog_pzcx1x2 = mlog_pzcx1x2 - grad_p * ss_fixed
 		raw_mlog_pzcx1x2 -= np.amin(raw_mlog_pzcx1x2,axis=0)
 		raw_pzcx1x2 = np.exp(-raw_mlog_pzcx1x2) + 1e-9
-		new_mlog_pzcx1x2 = -np.log(raw_pzcx1x2/np.sum(raw_pzcx1x2,axis=0))
+		new_mlog_pzcx1x2 = -np.log(raw_pzcx1x2/np.sum(raw_pzcx1x2,axis=0,keepdims=True))
 
 		# update temp vars
 		exp_mlog_pzcx1x2 = np.exp(-new_mlog_pzcx1x2)
@@ -963,7 +963,7 @@ def detLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		raw_mlog_pzcx1 = mlog_pzcx1 - grad_x1 * ss_fixed
 		raw_mlog_pzcx1 -= np.amin(raw_mlog_pzcx1,axis=0)
 		raw_pzcx1 = np.exp(-raw_mlog_pzcx1) + 1e-9
-		new_mlog_pzcx1 = -np.log(raw_pzcx1/np.sum(raw_pzcx1,axis=0))
+		new_mlog_pzcx1 = -np.log(raw_pzcx1/np.sum(raw_pzcx1,axis=0,keepdims=True))
 
 		# gradient of x2
 		grad_x2 = gamma * exp_mlog_pzcx2*(1-mlog_pzcx2) - (dual_x2 + penalty*err_x2)
@@ -971,7 +971,7 @@ def detLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		raw_mlog_pzcx2 = mlog_pzcx2 = grad_x2 * ss_fixed
 		raw_mlog_pzcx2 -= np.amin(raw_mlog_pzcx2,axis=0)
 		raw_pzcx2 = np.exp(-raw_mlog_pzcx2) + 1e-9
-		new_mlog_pzcx2 = -np.log(raw_pzcx2 / np.sum(raw_pzcx2,axis=0))
+		new_mlog_pzcx2 = -np.log(raw_pzcx2 / np.sum(raw_pzcx2,axis=0,keepdims=True))
 
 		# convergence # back to probability
 		conv_z = 0.5 * np.sum(np.fabs(est_pz-np.exp(-new_mlog_pz)))
@@ -1209,3 +1209,137 @@ def stoGradComp(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
 	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2}
+
+def stoLogGrad(px1x2,nz,gamma,maxiter,convthres,**kwargs):
+	ss_fixed = kwargs['ss_init']
+	d_seed = None
+	if kwargs.get("seed",False):
+		d_seed = kwargs['seed']
+	rng = np.random.default_rng(d_seed)
+	(nx1,nx2) = px1x2.shape
+	px1 = np.sum(px1x2,0)
+	px2 = np.sum(px1x2,1)
+	px1cx2 = px1x2/px2[None,:]
+	px2cx1 = (px1x2/px1[:,None]).T
+	if "init_load" in kwargs.keys():
+		pzcx1x2 = kwargs['pzcx1x2']
+	else:
+		pzcx1x2 = rng.random((nz,nx1,nx2))
+		pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
+	mlog_pzcx1x2 = -np.log(pzcx1x2)
+	itcnt =0
+	conv_flag = False
+	while itcnt < maxiter:
+		itcnt +=1
+		# auxiliary variables
+		pzcx1x2 = np.exp(-mlog_pzcx1x2)
+		pz = np.sum(pzcx1x2 * px1x2[None,:,:],axis=(1,2))
+		pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
+		pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
+
+		grad_p = -(1+gamma)*pzcx1x2 * px1x2[None,:,:] * (1-mlog_pzcx1x2) \
+				 +gamma*pzcx1x2*px1x2[None,:,:]*(1+np.log(pzcx1)[:,:,None]) \
+				 +gamma*pzcx1x2*px1x2[None,:,:]*(1+np.expand_dims(np.log(pzcx2),axis=1)) \
+				 +(1-gamma)*pzcx1x2*px1x2[None,:,:]*(1+np.log(pz)[:,None,None])
+		raw_mlog_pzcx1x2 = mlog_pzcx1x2 - ss_fixed * grad_p
+		min_mlog_pzcx1x2 = np.amin(raw_mlog_pzcx1x2,axis=0)
+		min_mlog_pzcx1x2 = np.where(min_mlog_pzcx1x2<0.0,min_mlog_pzcx1x2,np.zeros((nx1,nx2)))
+		fixed_mlog_pzcx1x2 = raw_mlog_pzcx1x2 - min_mlog_pzcx1x2[None,:,:]
+		raw_pzcx1x2 = np.exp(-fixed_mlog_pzcx1x2) + 1e-9
+		new_pzcx1x2 = raw_pzcx1x2 / np.sum(raw_pzcx1x2,axis=0,keepdims=0)
+		new_mlog_pzcx1x2 = -np.log(new_pzcx1x2)
+
+		conv_z = np.sum(np.fabs(new_pzcx1x2 - pzcx1x2),axis=0)
+		if np.all(conv_z<convthres):
+			conv_flag = True
+			break
+		else:
+			mlog_pzcx1x2 = new_mlog_pzcx1x2
+	pzcx1x2 = np.exp(-mlog_pzcx1x2)
+	pz = np.sum(pzcx1x2 * px1x2[None,:,:],axis=(1,2))
+	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
+	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
+	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,'pzcx1':pzcx1,"pzcx2":pzcx2}
+
+def stoLogDRS(px1x2,nz,gamma,maxiter,convthres,**kwargs):
+	ss_fixed = kwargs['ss_init']
+	d_seed = None
+	penalty = kwargs['penalty_coeff']
+	if kwargs.get("seed",False):
+		d_seed = kwargs['seed']
+	rng = np.random.default_rng(d_seed)
+	(nx1,nx2) = px1x2.shape
+	px1 = np.sum(px1x2,0)
+	px2 = np.sum(px1x2,1)
+	px1cx2 = px1x2/px2[None,:]
+	px2cx1 = (px1x2/px1[:,None]).T
+	if "init_load" in kwargs.keys():
+		pzcx1x2 = kwargs['pzcx1x2']
+		dual_p = kwargs['dual_p']
+	else:
+		pzcx1x2 = rng.random((nz,nx1,nx2))
+		pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
+	mlog_pzcx1x2 = -np.log(pzcx1x2)
+	mlog_q = copy.deepcopy(mlog_pzcx1x2)
+	dual_p = np.zeros((nz,nx1,nx2))
+
+	itcnt =0
+	conv_flag = False
+	while itcnt < maxiter:
+		itcnt +=1
+		# p update
+		# auxiliary variables for F
+		aux_p = np.exp(-mlog_pzcx1x2)
+		aux_pz = np.sum(aux_p * px1x2[None,:,:],axis=(1,2))
+		#aux_pzcx1 = np.sum(aux_p * (px2cx1.T)[None,:,:],axis=2)
+		#aux_pzcx2 = np.sum(aux_p * px1cx2[None,:,:],axis=1)
+		err_p = mlog_pzcx1x2 - mlog_q
+
+		grad_p = -(1+gamma) * aux_p * px1x2[None,:,:] * (1- mlog_pzcx1x2) \
+				 +(1-gamma) * aux_p * px1x2[None,:,:] * (1+np.log(aux_pz)[:,None,None]) \
+				 + dual_p + penalty * err_p
+		raw_mlog_pzcx1x2 = mlog_pzcx1x2 - grad_p * ss_fixed
+		# projection
+		min_p = np.amin(raw_mlog_pzcx1x2,axis=0)
+		min_p = np.where(min_p<0.0,min_p,np.zeros((nx1,nx2)))
+		prj_mlog_pzcx1x2 = raw_mlog_pzcx1x2 - min_p
+		raw_pzcx1x2 = np.exp(-prj_mlog_pzcx1x2) + 1e-9
+		new_pzcx1x2 = raw_pzcx1x2 / np.sum(raw_pzcx1x2,axis=0,keepdims=True)
+		new_mlog_pzcx1x2 = -np.log(new_pzcx1x2)
+
+		# dual update
+		err_p = new_mlog_pzcx1x2 - mlog_q
+		dual_p += penalty * err_p
+
+		# auxiliary variables for G
+		q_prob = np.exp(-mlog_q)
+		q_pzcx1 = np.sum(q_prob * (px2cx1.T)[None,:,:],axis=2)
+		q_pzcx2 = np.sum(q_prob * px1cx2[None,:,:],axis=1)
+
+		# FIXME: can be optimized for faster runtime, but keep as its separate gradients for clearness
+		grad_q = gamma * q_prob * px1x2[None,:,:] * (1+np.log(q_pzcx1)[:,:,None]) \
+				+gamma * q_prob * px1x2[None,:,:] * (1+np.expand_dims(np.log(q_pzcx2),axis=1)) \
+				-dual_p - penalty * err_p
+
+		raw_mlog_q = mlog_q - grad_q * ss_fixed
+		min_q = np.amin(raw_mlog_q,axis=0)
+		min_q = np.where(min_q<0,min_q,np.zeros((nx1,nx2)))
+		prj_mlog_q = raw_mlog_q - min_q
+		raw_q = np.exp(-prj_mlog_q) + 1e-9
+		new_q = raw_q / np.sum(raw_q,axis=0,keepdims=True)
+		new_mlog_q = -np.log(new_q)
+
+		# convergence 
+		err_p = new_mlog_pzcx1x2 - new_mlog_q
+		conv_p = np.sum(np.fabs(err_p),axis=0)
+		if np.all(conv_p<convthres):
+			conv_flag = True
+			break
+		else:
+			mlog_pzcx1x2 = new_mlog_pzcx1x2
+			mlog_q = new_mlog_q
+	pzcx1x2 = np.exp(-mlog_pzcx1x2)
+	pz = np.sum(pzcx1x2 * px1x2[None,:,:],axis=(1,2))
+	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
+	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
+	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,'pzcx1':pzcx1,"pzcx2":pzcx2,"dual_p":dual_p}
