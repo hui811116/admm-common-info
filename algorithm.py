@@ -1330,8 +1330,8 @@ def stoLogDRS(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		new_mlog_q = -np.log(new_q)
 
 		# convergence 
-		err_p = new_mlog_pzcx1x2 - new_mlog_q
-		conv_p = np.sum(np.fabs(err_p),axis=0)
+		#err_p = new_mlog_pzcx1x2 - new_mlog_q
+		conv_p = np.sum(np.fabs(new_pzcx1x2-new_q),axis=0)
 		if np.all(conv_p<convthres):
 			conv_flag = True
 			break
