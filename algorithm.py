@@ -950,12 +950,13 @@ def detLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		dual_x2 += penalty * err_x2
 
 		# gradient of z
-		grad_z = (gamma-1) * exp_mlog_pz*(1-mlog_pz) - (dual_z+penalty * err_z)
+		grad_z = (1-gamma) * exp_mlog_pz*(1-mlog_pz) - (dual_z+penalty * err_z)
 		# z projection
 		raw_mlog_pz = mlog_pz - grad_z * ss_fixed
 		raw_mlog_pz -= np.amin(raw_mlog_pz)
 		raw_pz = np.exp(-raw_mlog_pz) + 1e-9
-		new_mlog_pz = -np.log(raw_pz/np.sum(raw_pz))
+		new_pz = raw_pz/np.sum(raw_pz)
+		new_mlog_pz = -np.log(new_pz)
 
 		# gradient of x1
 		grad_x1 = gamma * exp_mlog_pzcx1*(1-mlog_pzcx1) - (dual_x1 + penalty * err_x1)
@@ -963,7 +964,8 @@ def detLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		raw_mlog_pzcx1 = mlog_pzcx1 - grad_x1 * ss_fixed
 		raw_mlog_pzcx1 -= np.amin(raw_mlog_pzcx1,axis=0)
 		raw_pzcx1 = np.exp(-raw_mlog_pzcx1) + 1e-9
-		new_mlog_pzcx1 = -np.log(raw_pzcx1/np.sum(raw_pzcx1,axis=0,keepdims=True))
+		new_pzcx1 = raw_pzcx1/np.sum(raw_pzcx1,axis=0,keepdims=True)
+		new_mlog_pzcx1 = -np.log(new_pzcx1)
 
 		# gradient of x2
 		grad_x2 = gamma * exp_mlog_pzcx2*(1-mlog_pzcx2) - (dual_x2 + penalty*err_x2)
@@ -971,12 +973,13 @@ def detLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		raw_mlog_pzcx2 = mlog_pzcx2 = grad_x2 * ss_fixed
 		raw_mlog_pzcx2 -= np.amin(raw_mlog_pzcx2,axis=0)
 		raw_pzcx2 = np.exp(-raw_mlog_pzcx2) + 1e-9
-		new_mlog_pzcx2 = -np.log(raw_pzcx2 / np.sum(raw_pzcx2,axis=0,keepdims=True))
+		new_pzcx2 = raw_pzcx2 / np.sum(raw_pzcx2,axis=0,keepdims=True)
+		new_mlog_pzcx2 = -np.log(new_pzcx2)
 
 		# convergence # back to probability
-		conv_z = 0.5 * np.sum(np.fabs(est_pz-np.exp(-new_mlog_pz)))
-		conv_x1 = 0.5 * np.sum(np.fabs(est_pzcx1-np.exp(-new_mlog_pzcx1)),axis=0)
-		conv_x2 = 0.5 * np.sum(np.fabs(est_pzcx2-np.exp(-new_mlog_pzcx2)),axis=0)
+		conv_z = 0.5 * np.sum(np.fabs(est_pz-new_pz))
+		conv_x1 = 0.5 * np.sum(np.fabs(est_pzcx1-new_pzcx1),axis=0)
+		conv_x2 = 0.5 * np.sum(np.fabs(est_pzcx2-new_pzcx2),axis=0)
 		if np.all(conv_z < convthres) and np.all(conv_x1<convthres) and np.all(conv_x2 < convthres):
 			conv_flag = True
 			break
