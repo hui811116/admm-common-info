@@ -1346,3 +1346,83 @@ def stoLogDRS(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
 	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,'pzcx1':pzcx1,"pzcx2":pzcx2,"dual_p":dual_p}
+
+def detLogDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
+	ss_fixed = kwargs['ss_init']
+	d_seed = None
+	penalty = kwargs['penalty_coeff']
+	if kwargs.get("seed",False):
+		d_seed = kwargs['seed']
+	rng = np.random.default_rng(d_seed)
+	(nx1,nx2) = px1x2.shape
+	px1 = np.sum(px1x2,0)
+	px2 = np.sum(px1x2,1)
+	px1cx2 = px1x2/px2[None,:]
+	px2cx1 = (px1x2/px1[:,None]).T
+	if "init_load" in kwargs.keys():
+		pzcx1x2 = kwargs['pzcx1x2']
+		dual_p = kwargs['dual_p']
+	else:
+		pzcx1x2 = rng.random((nz,nx1,nx2))
+		pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
+	mlog_pzcx1x2 = -np.log(pzcx1x2)
+	mlog_q = copy.deepcopy(mlog_pzcx1x2)
+	dual_p = np.zeros((nz,nx1,nx2))
+
+	itcnt =0
+	conv_flag = False
+	while itcnt < maxiter:
+		itcnt +=1
+		# exact common information
+		# loss = H(Z) + \gamma (I(Z;X1,X2) - I(Z;X1) - I(Z;X2) + I(X1;X2))
+		# equivalent loss = (1-gamma)H(Z) -gamma H(Z|X1,X2) + gamma* H(Z|X1) + gamma* H(Z|X2)
+		aux_p = np.exp(-mlog_pzcx1x2)
+		err_p = mlog_pzcx1x2 - mlog_q
+		# penalty <nu, mlogp - mlogq> + 0.5c * |mlogp - mlogq|^2
+		grad_p = -gamma * aux_p * (1-mlog_pzcx1x2) * px1x2[None,:,:] + dual_p + err_p * penalty
+		raw_mlog_pzcx1x2 = mlog_pzcx1x2 - ss_fixed * grad_p
+		# projection
+		min_p = np.amin(raw_mlog_pzcx1x2,axis=0)
+		min_p = np.where(min_p<0.0,min_p,np.zeros((nx1,nx2)))
+		prj_mlog_p = raw_mlog_pzcx1x2 - min_p
+		raw_pzcx1x2 = np.exp(-prj_mlog_p) + 1e-9
+		new_p = raw_pzcx1x2 / np.sum(raw_pzcx1x2,axis=0,keepdims=True)
+		new_mlog_pzcx1x2 = -np.log(new_p)
+
+		err_p = new_mlog_pzcx1x2 - mlog_q
+		# dual ascend
+		dual_p += penalty * err_p
+		# q update
+		aux_q = np.exp(-mlog_q)
+		aux_qz = np.sum(aux_q * px1x2[None,:,:],axis=(1,2))
+		aux_pzcx1 = np.sum(aux_q* (px2cx1.T)[None,:,:],axis=2)
+		aux_pzcx2 = np.sum(aux_q* px1cx2[None,:,:],axis=1)
+		grad_q = (1-gamma)* aux_q* px1x2[None,:,:] * (1+np.log(aux_qz)[:,None,None]) \
+				 + gamma  * aux_q* px1x2[None,:,:] * (1+np.log(aux_pzcx1)[:,:,None]) \
+				 + gamma  * aux_q* px1x2[None,:,:] * (1+np.expand_dims(np.log(aux_pzcx2),axis=1))\
+				 - dual_p - penalty * err_p
+		# projection for q
+		raw_mlog_q = mlog_q - ss_fixed * grad_q
+		min_q = np.amin(raw_mlog_q,axis=0)
+		min_q = np.where(min_q<0.0,min_q,np.zeros((nx1,nx2)))
+		prj_mlog_q = raw_mlog_q - min_q
+		raw_q = np.exp(-prj_mlog_q) + 1e-9
+		new_q = raw_q/np.sum(raw_q,axis=0,keepdims=True)
+		new_mlog_q = -np.log(new_q)
+
+		# convergence
+		#err_p = new_mlog_pzcx1x2 - new_mlog_q
+		# total variation
+		dtv_p = 0.5 * np.sum(np.fabs(new_p-new_q),axis=0)
+		#conv_p = np.sum(np.fabs(err_p),axis=0)
+		if np.all(dtv_p<convthres):
+			conv_flag = True
+			break
+		else:
+			mlog_pzcx1x2 = new_mlog_pzcx1x2
+			mlog_q = new_mlog_q
+	pzcx1x2 = np.exp(-mlog_pzcx1x2)
+	pz = np.sum(pzcx1x2 * px1x2[None,:,:],axis=(1,2))
+	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
+	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
+	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"dual_p":dual_p,}

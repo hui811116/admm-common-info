@@ -11,7 +11,7 @@ import copy
 import datetime
 
 parser = argparse.ArgumentParser()
-parser.add_argument("method",choices=["admmgd","tfadmmgd","logadmm"])
+parser.add_argument("method",choices=["admmgd","tfadmmgd","logadmm","logdrs"])
 parser.add_argument("--penalty",type=float,default=256.0,help="penalty coefficient of the ADMM solver")
 parser.add_argument("--maxiter",type=int,default=100000,help="maximum iteration before termination")
 parser.add_argument("--convthres",type=float,default=1e-6,help="convergence threshold")
@@ -63,6 +63,8 @@ elif args.method == "tfadmmgd":
 	algrun = alg.tfDetComAdmm
 elif args.method == "logadmm":
 	algrun = alg.detLogAdmm
+elif args.method == "logdrs":
+	algrun = alg.detLogDrs
 else:
 	sys.exit("{:} is an undefined method".format(args.method))
 
