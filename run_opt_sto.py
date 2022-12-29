@@ -13,7 +13,7 @@ import copy
 parser = argparse.ArgumentParser()
 parser.add_argument("method",choices=["admmgd","tfadmmgd","logadmm","gdbaseline","loggd",'logdrs'])
 parser.add_argument("--penalty",type=float,default=128.0,help="penalty coefficient of the ADMM solver")
-parser.add_argument("--maxiter",type=int,default=75000,help="maximum iteration before termination")
+parser.add_argument("--maxiter",type=int,default=100000,help="maximum iteration before termination")
 parser.add_argument("--convthres",type=float,default=1e-6,help="convergence threshold")
 parser.add_argument("--nrun",type=int,default=10,help="number of trail of each simulation")
 parser.add_argument("--ss_init",type=float,default=1e-2,help="step size initialization")
@@ -23,7 +23,7 @@ parser.add_argument("--seed",type=int,default=None,help="random seed for reprodu
 parser.add_argument("--ny",type=int,default=2,help="number of uniform hidden labels")
 parser.add_argument("--nb",type=int,default=2,help="number of blocks for observations")
 parser.add_argument("--corr",type=float,default=0,help="cyclic observation uncertainty given a label")
-parser.add_argument("--gamma_min",type=float,default=0.8,help="minimum gamma value")
+parser.add_argument("--gamma_min",type=float,default=0.5,help="minimum gamma value")
 parser.add_argument("--gamma_max",type=float,default=10.0,help="maximum gamma value")
 # the maximum value is always 1. otherwise a different problem
 parser.add_argument("--gamma_num",type=int,default=10,help="number of gamma values")
@@ -76,7 +76,7 @@ else:
 encoder_dict = {}
 
 nz_set = np.arange(2,len(px1)*len(px2)+1,1)
-res_all = np.zeros((len(gamma_range)*args.nrun*len(nz_set),12)) # gamma, nidx, niter, conv,nz, entz, mizx1,mizx2,cmizx1cx2, cmizx2cx1, loss, cmix1x2cz
+res_all = np.zeros((len(gamma_range)*args.nrun*len(nz_set),11)) # gamma, nidx, niter, conv,nz, entz, mizx1,mizx2,joint_MI, loss, cmix1x2cz
 rec_idx = 0
 for gidx ,gamma in enumerate(gamma_range):
 	encoder_dict[gidx] = {}
@@ -97,21 +97,16 @@ for gidx ,gamma in enumerate(gamma_range):
 
 			pzx1x2 = pzcx1x2 * prob_joint[None,:,:]
 			entzcx1x2 = -np.sum(pzx1x2 * np.log(pzcx1x2))
-			cmix1x2z = ut.calcMIcond(np.transpose(pzx1x2,axes=[1,2,0]))
-
 			if args.encoder:
 				encoder_dict[gidx][nn] = pzcx1x2
 			# take the maximum element
 			mizx1 = ut.calcMI(pzcx1 * px1[None,:])
 			mizx2 = ut.calcMI(pzcx2 * px2[None,:])
-			cmizx1cx2 = ut.calcMIcond(pzcx1x2 * prob_joint[None,:,:])
-			# calculate other direction
-			cmizx2cx1 = ut.calcMIcond(np.transpose(pzcx1x2 * prob_joint[None,:,:],(0,2,1)))
 			cmix1x2cz = ut.calcMIcond(np.transpose(pzcx1x2 * prob_joint[None,:,:],(1,2,0)))
 			# loss calculation
 			joint_mi = entz - entzcx1x2
 			tmp_loss = (1+gamma)*joint_mi - gamma * mizx1 - gamma * mizx2
-			tmp_result += [entz,mizx1,mizx2,cmizx1cx2,cmizx2cx1,tmp_loss,cmix1x2cz]
+			tmp_result += [entz,mizx1,mizx2,joint_mi,tmp_loss,cmix1x2cz]
 				
 			res_all[rec_idx,:] = np.array(tmp_result)
 			print("gamma,{:.4f},ntrial,{:},nz,{:},convergence,{:},niter,{:},I(X1,X2;Z),{:.6f},H(Z),{:.6f},tmp_loss,{:.5f},I(X1;X2|Z),{:.5f}".format(gamma,nn,nz,int(out_dict["conv"]),out_dict["niter"],joint_mi,entz,tmp_loss,cmix1x2cz))

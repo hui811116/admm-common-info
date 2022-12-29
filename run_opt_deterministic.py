@@ -70,12 +70,11 @@ else:
 
 encoder_dict = {}
 nz_set = np.arange(2,len(px1)*len(px2)+1,1)
-res_all = np.zeros((len(gamma_range)*args.nrun*len(nz_set),12)) # gamma, nidx, niter, conv,nz, entz, mizx1,mizx2,cmizx1cx2, cmizx2cx1, loss, cmix1x2cz
+res_all = np.zeros((len(gamma_range)*args.nrun*len(nz_set),11)) # gamma, nidx, niter, conv,nz, entz, mizx1,mizx2,joint_mi, loss, cmix1x2cz
 rec_idx = 0
 for gidx ,gamma in enumerate(gamma_range):
 	encoder_dict[gidx] = {}
 	for nz in nz_set:
-		#min_loss = np.Inf
 		for nn in range(args.nrun):
 			out_dict = algrun(prob_joint,nz,gamma,args.maxiter,args.convthres,**alg_dict)
 			tmp_result = [gamma,nn,out_dict['niter'],int(out_dict["conv"]),nz]
@@ -95,13 +94,10 @@ for gidx ,gamma in enumerate(gamma_range):
 			entz = ut.calcEnt(pz)
 			mizx1 = ut.calcMI(pzcx1 * px1[None,:])
 			mizx2 = ut.calcMI(pzcx2 * px2[None,:])
-			cmizx1cx2 = ut.calcMIcond(pzcx1x2 * prob_joint[None,:,:])
-			# calculate other direction
-			cmizx2cx1 = ut.calcMIcond(np.transpose(pzcx1x2 * prob_joint[None,:,:],(0,2,1)))
 			# loss calculation
 			joint_mi = entz - entzcx1x2
 			tmp_loss = entz +gamma * cmix1x2cz
-			tmp_result += [entz,mizx1,mizx2,cmizx1cx2,cmizx2cx1,tmp_loss,cmix1x2cz]
+			tmp_result += [entz,mizx1,mizx2,joint_mi,tmp_loss,cmix1x2cz]
 				
 			res_all[rec_idx,:] = np.array(tmp_result)
 			print("gamma,{:.4f},ntrial,{:},nz,{:},convergence,{:},niter,{:},H(Z),{:.6f},tmp_loss,{:.5f},I(X1;X2|Z),{:.5f}".format(gamma,nn,nz,int(out_dict["conv"]),out_dict["niter"],entz,tmp_loss,cmix1x2cz))
