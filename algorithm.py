@@ -127,7 +127,7 @@ def admmHighDim(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 			pzcx1 = new_pzcx1
 			pzcx2 = new_pzcx2
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"dual_z":dual_z,"dual_x1":dual_x1,"dual_x2":dual_x2}
-
+'''
 def stoLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	#ss_init = kwargs['ss_init']
 	#ss_scale= kwargs['ss_scale']
@@ -246,7 +246,7 @@ def stoLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,...],axis=1)
 
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"dual_z":dual_z,"dual_x1":dual_x1,"dual_x2":dual_x2}
-
+'''
 
 def detComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	ss_init = kwargs["ss_init"]
@@ -376,7 +376,7 @@ def detComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	# det_pzcx1x2 = det_pzcx1x2.astype("float32") + 1e-7
 	# det_pzcx1x2/= np.sum(det_pzcx1x2,axis=0,keepdims=True)
 	return {"conv":conv_flag, "niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"dual_z":dual_z,"dual_x1":dual_x1,"dual_x2":dual_x2}
-
+'''
 def tfDetComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	ss_init = kwargs["ss_init"]
 	ss_scale = kwargs["ss_scale"]
@@ -480,7 +480,8 @@ def tfDetComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2.numpy(),
 		"pz":pz.numpy(),"pzcx1":pzcx1.numpy(),"pzcx2":pzcx2.numpy(),
 		"dual_z":dual_z.numpy(),"dual_x1":dual_x1.numpy(),"dual_x2":dual_x2.numpy(),}
-
+'''
+'''
 def tfStoComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	ss_init = kwargs['ss_init']
 	ss_scale= kwargs['ss_scale']
@@ -637,7 +638,8 @@ def tfStoComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2.numpy(),
 			"pz":pz.numpy(),"pzcx1":pzcx1.numpy(),"pzcx2":pzcx2.numpy(),
 			"dual_z":dual_z.numpy(),"dual_x1":dual_x1.numpy(),"dual_x2":dual_x2.numpy()}
-
+'''
+'''
 # logadmm for deterministic case
 def detLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	#ss_init = kwargs["ss_init"]
@@ -771,7 +773,7 @@ def detLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	return {"conv":conv_flag,"niter":itcnt,
 			"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,
 			"dual_z":dual_z,"dual_x1":dual_x1,"dual_x2":dual_x2}
-
+'''
 # compared algorithms
 # gradient based methods
 # Sula, E.; Gastpar, M.C. Common Information Components Analysis. Entropy 2021, 23, 151.
@@ -831,7 +833,7 @@ def stoGradComp(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
 	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2}
-
+'''
 def stoLogGrad(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	ss_fixed = kwargs['ss_init']
 	d_seed = None
@@ -882,7 +884,7 @@ def stoLogGrad(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
 	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,'pzcx1':pzcx1,"pzcx2":pzcx2}
-
+'''
 def stoLogDRS(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	ss_fixed = kwargs['ss_init']
 	d_seed = None
@@ -955,6 +957,79 @@ def stoLogDRS(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		#err_p = new_mlog_pzcx1x2 - new_mlog_q
 		conv_p = np.sum(np.fabs(new_pzcx1x2-new_q),axis=0)
 		if np.all(conv_p<convthres):
+			conv_flag = True
+			break
+		else:
+			mlog_pzcx1x2 = new_mlog_pzcx1x2
+			mlog_q = new_mlog_q
+	pzcx1x2 = np.exp(-mlog_pzcx1x2)
+	pz = np.sum(pzcx1x2 * px1x2[None,:,:],axis=(1,2))
+	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
+	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
+	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,'pzcx1':pzcx1,"pzcx2":pzcx2,"dual_p":dual_p}
+
+def stoLogDrsVar(px1x2,nz,gamma,maxiter,convthres,**kwargs):
+	ss_fixed = kwargs['ss_init']
+	d_seed = None
+	penalty = kwargs['penalty_coeff']
+	if kwargs.get("seed",False):
+		d_seed = kwargs['seed']
+	rng = np.random.default_rng(d_seed)
+	(nx1,nx2) = px1x2.shape
+	px1 = np.sum(px1x2,0)
+	px2 = np.sum(px1x2,1)
+	px1cx2 = px1x2/px2[None,:]
+	px2cx1 = (px1x2/px1[:,None]).T
+	if "init_load" in kwargs.keys():
+		pzcx1x2 = kwargs['pzcx1x2']
+		dual_p = kwargs['dual_p']
+	else:
+		pzcx1x2 = rng.random((nz,nx1,nx2))
+		pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
+	mlog_pzcx1x2 = -np.log(pzcx1x2)
+	mlog_q = copy.deepcopy(mlog_pzcx1x2)
+	dual_p = np.zeros((nz,nx1,nx2))
+
+	itcnt =0
+	conv_flag = False
+	while itcnt < maxiter:
+		itcnt +=1
+		aux_p = np.exp(-mlog_pzcx1x2)
+		err_p = mlog_pzcx1x2 - mlog_q
+		#
+		grad_p = -(1+gamma) * aux_p * px1x2[None,:,:] * (1-mlog_pzcx1x2) + dual_p + penalty * err_p
+		raw_mlog_pzcx1x2 = mlog_pzcx1x2 - grad_p * ss_fixed
+		min_p = np.amin(raw_mlog_pzcx1x2,axis=0)
+		min_p = np.where(min_p<0.0,min_p,np.zeros((nx1,nx2)))
+		prj_mlog_p = raw_mlog_pzcx1x2 - min_p
+		raw_pzcx1x2 = np.exp(-prj_mlog_p) + 1e-9
+		new_pzcx1x2 = raw_pzcx1x2 / np.sum(raw_pzcx1x2,axis=0,keepdims=True)
+		new_mlog_pzcx1x2 = -np.log(new_pzcx1x2)
+		# 
+		err_p = new_mlog_pzcx1x2 - mlog_q
+		#
+		dual_p += penalty * err_p
+		#
+		aux_q = np.exp(-mlog_q)
+		aux_qz = np.sum(aux_q * px1x2[None,:,:],axis=(1,2))
+		aux_qzcx1 = np.sum(aux_q * (px2cx1.T)[None,:,:],axis=2)
+		aux_qzcx2 = np.sum(aux_q * px1cx2[None,:,:],axis=1)
+		
+		grad_q = (1-gamma)*aux_q * px1x2[None,:,:] * (1+np.log(aux_qz)[:,None,None])\
+				+gamma * aux_q * px1x2[None,:,:] * (1+np.log(aux_qzcx1)[:,:,None])\
+				+gamma * aux_q * px1x2[None,:,:] * (1+np.expand_dims(np.log(aux_qzcx2),axis=1))\
+				-dual_p - penalty * err_p
+		raw_mlog_q = mlog_q - grad_q * ss_fixed
+		min_q = np.amin(raw_mlog_q,axis=0)
+		min_q = np.where(min_q<0.0,min_q,np.zeros((nx1,nx2)))
+		prj_mlog_q = raw_mlog_q - min_q
+		raw_q = np.exp(-prj_mlog_q) + 1e-9
+		new_q = raw_q / np.sum(raw_q,axis=0,keepdims=True)
+		new_mlog_q = -np.log(new_q)
+		#
+		err_p = new_mlog_pzcx1x2 - new_mlog_q
+		dtv_p = 0.5 * np.sum(np.fabs(new_pzcx1x2-new_q),axis=0)
+		if np.all(dtv_p<convthres):
 			conv_flag = True
 			break
 		else:

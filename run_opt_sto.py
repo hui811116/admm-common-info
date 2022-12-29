@@ -11,7 +11,7 @@ import datetime
 import copy
 
 parser = argparse.ArgumentParser()
-parser.add_argument("method",choices=["admmgd","tfadmmgd","logadmm","gdbaseline","loggd",'logdrs'])
+parser.add_argument("method",choices=["admmgd","gdbaseline","loggd",'logdrs','logdrsvar'])
 parser.add_argument("--penalty",type=float,default=128.0,help="penalty coefficient of the ADMM solver")
 parser.add_argument("--maxiter",type=int,default=100000,help="maximum iteration before termination")
 parser.add_argument("--convthres",type=float,default=1e-6,help="convergence threshold")
@@ -60,16 +60,18 @@ alg_dict = {
 # algorithm selection
 if args.method == "admmgd":
 	algrun = alg.admmHighDim
-elif args.method == "tfadmmgd":
-	algrun = alg.tfStoComAdmm
-elif args.method == "logadmm":
-	algrun = alg.stoLogAdmm
+#elif args.method == "tfadmmgd":
+#	algrun = alg.tfStoComAdmm
+#elif args.method == "logadmm":
+#	algrun = alg.stoLogAdmm
 elif args.method == "gdbaseline":
 	algrun = alg.stoGradComp
-elif args.method == "loggd":
-	algrun = alg.stoLogGrad
+#elif args.method == "loggd":
+#	algrun = alg.stoLogGrad
 elif args.method == "logdrs":
 	algrun = alg.stoLogDRS
+elif args.method == "logdrsvar":
+	algrun = alg.stoLogDrsVar
 else:
 	sys.exit("undefined method {:}".format(args.method))
 
