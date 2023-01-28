@@ -18,16 +18,18 @@ parser.add_argument("--convthres",type=float,default=1e-6,help="convergence thre
 parser.add_argument("--nrun",type=int,default=10,help="number of trail of each simulation")
 parser.add_argument("--ss_init",type=float,default=4e-3,help="step size initialization")
 parser.add_argument("--ss_scale",type=float,default=0.25,help="step size scaling")
-parser.add_argument("--output_dir",type=str,default="unsu_det_results",help="output filename")
+parser.add_argument("--output_dir",type=str,default="unsu_det_test_results",help="output filename")
 parser.add_argument("--seed",type=int,default=None,help="random seed for reproduction")
 parser.add_argument("--ny",type=int,default=2,help="number of uniform hidden labels")
 parser.add_argument("--nb",type=int,default=2,help="number of blocks for observations")
 parser.add_argument("--corr",type=float,default=0,help="cyclic observation uncertainty given a label")
-parser.add_argument("--gamma_min",type=float,default=0.5,help="minimum gamma value")
+parser.add_argument("--gamma_min",type=float,default=1.0,help="minimum gamma value")
 parser.add_argument("--gamma_max",type=float,default=10.0,help="maximum gamma value")
 # the maximum value is always 1. otherwise a different problem
 parser.add_argument("--gamma_num",type=int,default=10,help="number of gamma values")
-parser.add_argument("--encoder",action="store_true",default=False,help="storing all the encoders found")
+parser.add_argument("--test",action="store_true",default=True,help="enabling testing for synthetic clustering")
+parser.add_argument("--zsearch",action="store_true",default=False,help="no knowledge of the number of clusters")
+#parser.add_argument("--encoder",action="store_true",default=False,help="storing all the encoders found")
 
 args = parser.parse_args()
 argsdict = vars(args)
@@ -68,12 +70,14 @@ elif args.method == "logdrs":
 else:
 	sys.exit("{:} is an undefined method".format(args.method))
 
-encoder_dict = {}
-nz_set = np.arange(2,len(px1)*len(px2)+1,1)
-res_all = np.zeros((len(gamma_range)*args.nrun*len(nz_set),11)) # gamma, nidx, niter, conv,nz, entz, mizx1,mizx2,joint_mi, loss, cmix1x2cz
+encoder_list = []
+if args.zsearch:
+	nz_set = np.arange(2,len(px1)*len(px2)+1,1)
+else:
+	nz_set = np.array([args.ny]) # FIXME: assume knowing the cardinality of Z
+res_all = np.zeros((len(gamma_range)*args.nrun*len(nz_set),11)) # gamma,nn, nidx, niter, conv,nz, entz, mizx1,mizx2,joint_mi, loss, cmix1x2cz
 rec_idx = 0
 for gidx ,gamma in enumerate(gamma_range):
-	encoder_dict[gidx] = {}
 	for nz in nz_set:
 		for nn in range(args.nrun):
 			out_dict = algrun(prob_joint,nz,gamma,args.maxiter,args.convthres,**alg_dict)
@@ -85,8 +89,8 @@ for gidx ,gamma in enumerate(gamma_range):
 			pz = np.sum(pzcx1x2 * prob_joint[None,:,:],axis=(1,2))
 			pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
 			pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
-			if args.encoder:
-				encoder_dict[gidx][nn] = pzcx1x2
+			if args.test:
+				encoder_list.append(pzcx1x2)
 			# take the maximum element
 			pzx1x2 = pzcx1x2 * prob_joint[None,:,:]
 			cmix1x2cz = ut.calcMIcond(np.transpose(pzx1x2,axes=[1,2,0]))
@@ -100,7 +104,7 @@ for gidx ,gamma in enumerate(gamma_range):
 			tmp_result += [entz,mizx1,mizx2,joint_mi,tmp_loss,cmix1x2cz]
 				
 			res_all[rec_idx,:] = np.array(tmp_result)
-			print("gamma,{:.4f},ntrial,{:},nz,{:},convergence,{:},niter,{:},H(Z),{:.6f},tmp_loss,{:.5f},I(X1;X2|Z),{:.5f}".format(gamma,nn,nz,int(out_dict["conv"]),out_dict["niter"],entz,tmp_loss,cmix1x2cz))
+			print("gamma,{:.3f},nidx,{:},nz,{:},conv,{:},nit,{:},H(Z),{:.5f},loss,{:.4f},I(X1;X2|Z),{:.5f}".format(gamma,nn,nz,int(out_dict["conv"]),out_dict["niter"],entz,tmp_loss,cmix1x2cz))
 			rec_idx += 1
 
 d_save_dir = os.path.join(os.getcwd(),args.output_dir)
@@ -119,7 +123,7 @@ with open(os.path.join(d_save_dir,safe_savename+".npy"),"wb") as fid:
 # saving the encoders
 if args.encoder:
 	with open(os.path.join(d_save_dir,safe_savename+"_encoders.pkl"),"wb") as fid:
-		pickle.dump(encoder_dict,fid)
+		pickle.dump(encoder_list,fid)
 # saving the configuration in case of error
 with open(os.path.join(d_save_dir,safe_savename+"_config.pkl"),"wb") as fid:
 	pickle.dump(argsdict,fid)

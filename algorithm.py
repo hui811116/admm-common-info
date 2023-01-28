@@ -6,7 +6,7 @@ import utils as ut
 import tensorflow as tf
 import copy
 #import scipy as sp
-#from scipy.special import softmax
+from scipy.special import softmax
 
 def admmHighDim(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	ss_init = kwargs['ss_init']
@@ -17,8 +17,8 @@ def admmHighDim(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		d_seed = kwargs["seed"]
 	rng = np.random.default_rng(d_seed)
 	(nx1,nx2) = px1x2.shape
-	px2 = np.sum(px1x2,0)
 	px1 = np.sum(px1x2,1)
+	px2 = np.sum(px1x2,0)
 	px1cx2 = px1x2 /px2[None,:]
 	px2cx1 = (px1x2/ px1[:,None]).T
 
@@ -45,9 +45,9 @@ def admmHighDim(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		dual_x1= np.zeros(pzcx1.shape)
 		dual_x2= np.zeros(pzcx2.shape)
 	# gradient masking
-	mask_pzcx1 = np.ones(pzcx1.shape)
-	mask_pzcx2 = np.ones(pzcx2.shape)
-	mask_pzcx1x2 = np.ones(pzcx1x2.shape)
+	#mask_pzcx1 = np.ones(pzcx1.shape)
+	#mask_pzcx2 = np.ones(pzcx2.shape)
+	#mask_pzcx1x2 = np.ones(pzcx1x2.shape)
 	itcnt = 0
 	conv_flag= False
 	while itcnt < maxiter:
@@ -72,13 +72,13 @@ def admmHighDim(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 				+np.repeat(np.expand_dims((dual_x2 + penalty * err_x2)/px2[None,:],axis=1),repeats=len(px1),axis=1) )*px1x2[None,:,:]
 
 		mean_grad_p = grad_p - np.mean(grad_p,axis=0)
-		ss_p = gd.naiveStepSize(pzcx1x2,-mean_grad_p * mask_pzcx1x2,ss_init,ss_scale)
+		ss_p = gd.naiveStepSize(pzcx1x2,-mean_grad_p,ss_init,ss_scale)
 		if ss_p == 0:
 			#print("pzcx1x2 break")
-			bad_fibers = np.any(pzcx1x2 - mean_grad_p * 1e-9 >= 1,axis=0)
-			mask_pzcx1x2[:,bad_fibers] = 0
-			#break
-		new_pzcx1x2 = pzcx1x2 - mean_grad_p * ss_p * mask_pzcx1x2
+			#bad_fibers = np.any(pzcx1x2 - mean_grad_p * 1e-9 >= 1,axis=0)
+			#mask_pzcx1x2[:,bad_fibers] = 0
+			break
+		new_pzcx1x2 = pzcx1x2 - mean_grad_p * ss_p
 		# new errors
 		err_z = np.sum(new_pzcx1x2 * px1x2[None,:,:],axis=(1,2)) - pz
 		err_x1= np.sum(new_pzcx1x2 * (px2cx1.T)[None,:,:],axis=2) - pzcx1
@@ -97,27 +97,25 @@ def admmHighDim(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 			break
 		grad_x1= -gamma  * (np.log(pzcx1)+1)*px1[None,:] - dual_x1 - penalty * err_x1
 		mean_grad_x1 = grad_x1 - np.mean(grad_x1,axis=0)
-		ss_x1 = gd.naiveStepSize(pzcx1,-mean_grad_x1*mask_pzcx1,ss_z,ss_scale)
+		ss_x1 = gd.naiveStepSize(pzcx1,-mean_grad_x1,ss_z,ss_scale)
 		if ss_x1 == 0:
-			bad_cols = np.any(pzcx1 - mean_grad_x1 * 1e-9 >= 1,axis=0)
-			mask_pzcx1[:,bad_cols] = 0
+			break
 		grad_x2 = -gamma * (np.log(pzcx2)+1)*px2[None,:] - dual_x2 - penalty * err_x2
 		mean_grad_x2 = grad_x2 - np.mean(grad_x2,axis=0)
-		ss_x2 = gd.naiveStepSize(pzcx2,-mean_grad_x2*mask_pzcx2,ss_x1,ss_scale)
+		ss_x2 = gd.naiveStepSize(pzcx2,-mean_grad_x2,ss_x1,ss_scale)
 		if ss_x2 == 0:
-			bad_cols = np.any(pzcx2 - mean_grad_x2 * 1e-9 >= 1,axis=0)
-			mask_pzcx2[:,bad_cols] = 0
+			break
 		new_pz = pz - mean_grad_z * ss_x2
-		new_pzcx1 = pzcx1 - mean_grad_x1 * ss_x2 * mask_pzcx1
-		new_pzcx2 = pzcx2 - mean_grad_x2 * ss_x2 * mask_pzcx2
+		new_pzcx1 = pzcx1 - mean_grad_x1 * ss_x2
+		new_pzcx2 = pzcx2 - mean_grad_x2 * ss_x2
 		# new errors
 		err_z = np.sum(new_pzcx1x2 * px1x2[None,:,:],axis=(1,2)) - new_pz
 		err_x1= np.sum(new_pzcx1x2 * (px2cx1.T)[None,:,:],axis=2) - new_pzcx1
 		err_x2= np.sum(new_pzcx1x2 * px1cx2[None,:,:],axis=1) - new_pzcx2
 		# convergence
 		conv_z = 0.5 *np.sum(np.abs(err_z))
-		conv_x1 = 0.5 *np.sum(np.abs(err_x1 * mask_pzcx1),axis=0)
-		conv_x2 = 0.5 * np.sum(np.abs(err_x2  * mask_pzcx2),axis=0)
+		conv_x1 = 0.5 *np.sum(np.abs(err_x1),axis=0)
+		conv_x2 = 0.5 * np.sum(np.abs(err_x2),axis=0)
 		if conv_z< convthres and np.all(conv_x1<convthres) and np.all(conv_x2<convthres):
 			conv_flag = True
 			break
@@ -126,7 +124,81 @@ def admmHighDim(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 			pz = new_pz
 			pzcx1 = new_pzcx1
 			pzcx2 = new_pzcx2
+	pz = np.sum(pzcx1x2 * px1x2[None,...],axis=(1,2))
+	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,...],axis=2)
+	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,...],axis=1)
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"dual_z":dual_z,"dual_x1":dual_x1,"dual_x2":dual_x2}
+
+def stoGdDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
+	ss_init = kwargs['ss_init']
+	ss_scale= kwargs['ss_scale']
+	penalty = kwargs['penalty_coeff']
+	d_seed = None
+	if kwargs.get("seed",False):
+		d_seed = kwargs["seed"]
+	rng = np.random.default_rng(d_seed)
+	(nx1,nx2) = px1x2.shape
+	px1 = np.sum(px1x2,1)
+	px2 = np.sum(px1x2,0)
+	px1cx2 = px1x2 /px2[None,:]
+	px2cx1 = (px1x2/ px1[:,None]).T
+
+	if "init_load" in kwargs.keys():
+		pzcx1x2 = kwargs["pzcx1x2"]
+		q_prob = kwargs["q_prob"]
+		dual_p = kwargs["dual_p"]
+	else:
+		# random initialization
+		pzcx1x2 = rng.random((nz,nx1,nx2))
+		pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
+		# augmented variables
+		q_prob = copy.deepcopy(pzcx1x2)
+		# dual vars
+		dual_p = np.zeros(pzcx1x2.shape)
+	# gradient masking
+	itcnt = 0
+	conv_flag= False
+	while itcnt < maxiter:
+		itcnt +=1
+		# auxiliary
+		err_p = pzcx1x2 - q_prob
+		#
+		grad_p = (1+gamma)*(np.log(pzcx1x2)+1) * px1x2[None,:,:] + dual_p + penalty * err_p
+		mean_grad_p = grad_p - np.mean(grad_p,axis=0,keepdims=True)
+		ss_p = gd.naiveStepSize(pzcx1x2,-mean_grad_p,ss_init,ss_scale)
+		if ss_p == 0:
+			break
+		new_pzcx1x2 = pzcx1x2 - ss_p * mean_grad_p
+		# 
+		err_p = new_pzcx1x2 - q_prob
+		dual_p += penalty * err_p
+		# auxiliary
+		qz = np.sum(q_prob * px1x2[None,:,:],axis=(1,2))
+		qzcx1 = np.sum(q_prob * (px2cx1.T)[None,:,:],axis=2)
+		qzcx2 = np.sum(q_prob * px1cx2[None,:,:],axis=1)
+		grad_q = -(1-gamma) * (np.log(qz)[:,None,None]+1) *px1x2[None,:,:] \
+				 -gamma * (np.log(qzcx1)[:,:,None]+1) * px1x2[None,:,:]\
+				 -gamma * (np.repeat(np.expand_dims(np.log(qzcx2),axis=1)+1,repeats=nx1,axis=1)) * px1x2[None,:,:]\
+				 -dual_p - penalty* err_p
+		mean_grad_q = grad_q - np.mean(grad_q,axis=0,keepdims=True)
+		ss_q = gd.naiveStepSize(q_prob,-mean_grad_q,ss_init,ss_scale)
+		if ss_q ==0:
+			break
+		new_q = q_prob - ss_q * mean_grad_q
+		#
+		err_p = new_pzcx1x2 - new_q
+		conv_p = 0.5 * np.sum(np.fabs(err_p),axis=0)
+		if np.all(conv_p<convthres):
+			conv_flag = True
+			break
+		else:
+			pzcx1x2 = new_pzcx1x2
+			q_prob = new_q
+	pz = np.sum(pzcx1x2 * px1x2[None,:,:],axis=(1,2))
+	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
+	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
+	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"q_prob":q_prob,"dual_p":dual_p,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2}
+
 '''
 def stoLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	#ss_init = kwargs['ss_init']
@@ -138,8 +210,8 @@ def stoLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		d_seed = kwargs["seed"]
 	rng = np.random.default_rng(d_seed)
 	(nx1,nx2) = px1x2.shape
-	px2 = np.sum(px1x2,0)
 	px1 = np.sum(px1x2,1)
+	px2 = np.sum(px1x2,0)
 	px1cx2 = px1x2 /px2[None,:]
 	px2cx1 = (px1x2/ px1[:,None]).T
 
@@ -257,8 +329,8 @@ def detComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		d_seed = kwargs["seed"]
 	rng = np.random.default_rng(d_seed)
 	(nx1,nx2) = px1x2.shape
-	px2 = np.sum(px1x2,0)
 	px1 = np.sum(px1x2,1)
+	px2 = np.sum(px1x2,0)
 	px1cx2 = px1x2 /px2[None,:]
 	px2cx1 = (px1x2/ px1[:,None]).T
 
@@ -376,269 +448,7 @@ def detComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	# det_pzcx1x2 = det_pzcx1x2.astype("float32") + 1e-7
 	# det_pzcx1x2/= np.sum(det_pzcx1x2,axis=0,keepdims=True)
 	return {"conv":conv_flag, "niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"dual_z":dual_z,"dual_x1":dual_x1,"dual_x2":dual_x2}
-'''
-def tfDetComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
-	ss_init = kwargs["ss_init"]
-	ss_scale = kwargs["ss_scale"]
-	penalty = kwargs['penalty_coeff']
-	if kwargs["seed"]:
-		rng = tf.random.Generator.from_seed(kwargs["seed"])
-	else:
-		rng = tf.random.Generator.from_non_deterministic_state()
-	tf_px1x2 = tf.convert_to_tensor(px1x2,dtype=tf.float64)
-	(nx1,nx2) = px1x2.shape
-	px1 = tf.reduce_sum(tf_px1x2,axis=1)
-	px2 = tf.reduce_sum(tf_px1x2,axis=0)
-	px1cx2 = tf_px1x2/px2[None,:]
-	px2cx1 = tf.transpose(tf_px1x2/px1[:,None])
-	if "init_load" in kwargs.keys():
-		pzcx1x2 = tf.convert_to_tensor(kwargs["pzcx1x2"],dtype=tf.float64)
-		pz = tf.convert_to_tensor(kwargs["pz"],dtype=tf.float64)
-		pzcx1 = tf.convert_to_tensor(kwargs["pzcx1"],dtype=tf.float64)
-		pzcx2 = tf.convert_to_tensor(kwargs["pzcx2"],dtype=tf.float64)
-		dual_z = tf.convert_to_tensor(kwargs["dual_z"],dtype=tf.float64)
-		dual_x1 = tf.convert_to_tensor(kwargs["dual_x1"],dtype=tf.float64)
-		dual_x2 = tf.convert_to_tensor(kwargs["dual_x2"],dtype=tf.float64)
-	else:
-		# random initialization
-		pzcx1x2 = tf.nn.softmax(rng.normal(shape=(nz,nx1,nx2),dtype=tf.float64),axis=0)
-		# augmented variables
-		pz = tf.reduce_sum(pzcx1x2 * tf_px1x2[None,:,:],axis=(1,2))
-		pzcx1 = tf.reduce_sum(pzcx1x2 * tf.transpose(px2cx1)[None,:,:],axis=2)
-		pzcx2 = tf.reduce_sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
 
-		# dual vars
-		dual_z = tf.zeros(pz.shape,dtype=tf.float64)
-		dual_x1= tf.zeros(pzcx1.shape,dtype=tf.float64)
-		dual_x2= tf.zeros(pzcx2.shape,dtype=tf.float64)
-	conv_flag = False
-	itcnt = 0
-	while itcnt < maxiter:
-		itcnt += 1
-		err_z = tf.reduce_sum(pzcx1x2 * tf_px1x2[None,:,:],axis=(1,2)) - pz
-		err_x1 = tf.reduce_sum(pzcx1x2 * tf.transpose(px2cx1)[None,:,:],axis=2) - pzcx1
-		err_x2 = tf.reduce_sum(pzcx1x2 * px1cx2[None,:,:],axis=1) - pzcx2
-		# errors
-		# gradient of convex part
-		grad_p = (gamma * (tf.math.log(pzcx1x2)+1)\
-				+ (dual_z + penalty * err_z)[:,None,None]\
-				+ ((dual_x1 + penalty * err_x1)/px1[None,:])[:,:,None]\
-				+ tf.repeat(tf.expand_dims((dual_x2+penalty*err_x2)/px2[None,:],1),repeats=nx1,axis=1) )*tf_px1x2[None,:,:]
-		
-		mean_grad_p = grad_p - tf.reduce_mean(grad_p,axis=0)
-		ss_p = gd.tfNaiveSS(pzcx1x2,-mean_grad_p,ss_init,ss_scale)
-		if ss_p == 0:
-			break
-		new_pzcx1x2 = pzcx1x2 - ss_p * mean_grad_p
-
-		# new error
-		err_z = tf.reduce_sum(new_pzcx1x2 * tf_px1x2[None,:,:],axis=(1,2)) - pz
-		err_x1 = tf.reduce_sum(new_pzcx1x2 * tf.transpose(px2cx1)[None,:,:],axis=2) - pzcx1
-		err_x2 = tf.reduce_sum(new_pzcx1x2 * px1cx2[None,:,:],axis=1) - pzcx2
-		# dual update
-		dual_z += penalty * err_z
-		dual_x1 += penalty * err_x1
-		dual_x2 += penalty * err_x2
-
-		# grad z, compute (1-gamma)H(Z)
-		grad_z = -(1-gamma) * (tf.math.log(pz)+1) - dual_z - penalty * err_z
-		mean_grad_z = grad_z - tf.reduce_mean(grad_z,axis=0)
-		# grad x1, compute -gamma H(Z|X_1)
-		grad_x1 = -gamma * (tf.math.log(pzcx1)+1)* px1[None,:] - dual_x1 - penalty * err_x1
-		mean_grad_x1 = grad_x1 - tf.reduce_mean(grad_x1,axis=0)
-		grad_x2 = -gamma * (tf.math.log(pzcx2)+1) * px2[None,:] - dual_x2 - penalty * err_x2
-		mean_grad_x2 = grad_x2 - tf.reduce_mean(grad_x2,axis=0)
-		ss_z = gd.tfNaiveSS(pz,-mean_grad_z,ss_init,ss_scale)
-		if ss_z == 0:
-			break
-		ss_x1 = gd.tfNaiveSS(pzcx1,-mean_grad_x1, ss_z, ss_scale)
-		if ss_x1 == 0:
-			break
-		ss_x2 = gd.tfNaiveSS(pzcx2,-mean_grad_x2,ss_x1,ss_scale)
-		if ss_x2 == 0:
-			break
-		new_pz = pz - mean_grad_z * ss_x2
-		new_pzcx1 = pzcx1 - mean_grad_x1 * ss_x2
-		new_pzcx2 = pzcx2 - mean_grad_x2 * ss_x2
-
-		# error
-		err_z = tf.reduce_sum(new_pzcx1x2 * tf_px1x2[None,:,:],axis=(1,2)) - new_pz
-		err_x1 = tf.reduce_sum(new_pzcx1x2 * tf.transpose(px2cx1)[None,:,:],axis=2) - new_pzcx1
-		err_x2 = tf.reduce_sum(new_pzcx1x2 * px1cx2[None,:,:],axis=1) - new_pzcx2
-		conv_z = 0.5 * tf.reduce_sum(tf.math.abs(err_z))
-		conv_x1 = 0.5 * tf.reduce_sum(tf.math.abs(err_x1),axis=0)
-		conv_x2 = 0.5 * tf.reduce_sum(tf.math.abs(err_x2),axis=0)
-		if tf.reduce_all(conv_z < convthres) and tf.reduce_all(conv_x1 < convthres) and tf.reduce_all(conv_x2 < convthres):
-			conv_flag = True
-			break
-		else:
-			pzcx1x2 = new_pzcx1x2
-			pz = new_pz
-			pzcx1 = new_pzcx1
-			pzcx2 = new_pzcx2
-
-	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2.numpy(),
-		"pz":pz.numpy(),"pzcx1":pzcx1.numpy(),"pzcx2":pzcx2.numpy(),
-		"dual_z":dual_z.numpy(),"dual_x1":dual_x1.numpy(),"dual_x2":dual_x2.numpy(),}
-'''
-'''
-def tfStoComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
-	ss_init = kwargs['ss_init']
-	ss_scale= kwargs['ss_scale']
-	penalty = kwargs['penalty_coeff']
-	#d_seed = None
-	if kwargs["seed"]:
-		rng = tf.random.Generator.from_seed(kwargs["seed"])
-	else:
-		rng = tf.random.Generator.from_non_deterministic_state()
-	tf_px1x2 = tf.convert_to_tensor(px1x2,dtype=tf.float64)
-	(nx1,nx2) = px1x2.shape
-	#px2 = np.sum(px1x2,0)
-	#px1 = np.sum(px1x2,1)
-	px1 = tf.reduce_sum(tf_px1x2,axis=1)
-	px2 = tf.reduce_sum(tf_px1x2,axis=0)
-	px1cx2 = tf_px1x2 /px2[None,:]
-	px2cx1 = tf.transpose(tf_px1x2/ px1[:,None])
-
-	if "init_load" in kwargs.keys():
-		pzcx1x2 = tf.convert_to_tensor(kwargs["pzcx1x2"],dtype=tf.float64)
-		pz = tf.convert_to_tensor(kwargs["pz"],dtype=tf.float64)
-		pzcx1 = tf.convert_to_tensor(kwargs["pzcx1"],dtype=tf.float64)
-		pzcx2 = tf.convert_to_tensor(kwargs["pzcx2"],dtype=tf.float64)
-		dual_z = tf.convert_to_tensor(kwargs["dual_z"],dtype=tf.float64)
-		dual_x1 = tf.convert_to_tensor(kwargs["dual_x1"],dtype=tf.float64)
-		dual_x2 = tf.convert_to_tensor(kwargs["dual_x2"],dtype=tf.float64)
-	else:
-		# random initialization
-		pzcx1x2 = tf.nn.softmax(rng.normal(shape=(nz,nx1,nx2),dtype=tf.float64),axis=0)
-		#pzcx1x2 = rng.random((nz,nx1,nx2))
-		#pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
-
-		# augmented variables
-		pz = tf.reduce_sum(pzcx1x2 * tf_px1x2[None,:,:],axis=(1,2))
-		pzcx1 = tf.reduce_sum(pzcx1x2 * tf.transpose(px2cx1)[None,:,:],axis=2)
-		pzcx2 = tf.reduce_sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
-		#pz = np.sum(pzcx1x2 * px1x2[None,:,:],axis=(1,2))
-		#pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
-		#pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
-
-		# dual vars
-		dual_z = tf.zeros(pz.shape,dtype=tf.float64)
-		dual_x1= tf.zeros(pzcx1.shape,dtype=tf.float64)
-		dual_x2= tf.zeros(pzcx2.shape,dtype=tf.float64)
-	#print(pzcx1x2)
-	#print(pzcx1.shape)
-	#print(pzcx2.shape)
-	#sys.exit()
-	# masks
-	mask_z = tf.ones(pz.shape,dtype=tf.float64)
-	mask_x1 = tf.ones(pzcx1.shape,dtype=tf.float64)
-	mask_x2 = tf.ones(pzcx2.shape,dtype=tf.float64)
-	mask_p = tf.ones(pzcx1x2.shape,dtype=tf.float64)
-	conv_flag = False
-	itcnt = 0
-	while itcnt < maxiter:
-		itcnt += 1
-		#err_z = np.sum(pzcx1x2 * px1x2[None,:,:],axis=(1,2)) - pz
-		err_z = tf.reduce_sum(pzcx1x2 * tf_px1x2[None,:,:],axis=(1,2)) - pz
-		#err_x1= np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2) - pzcx1
-		err_x1 = tf.reduce_sum(pzcx1x2 * tf.transpose(px2cx1)[None,:,:],axis=2) - pzcx1
-		#err_x2= np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1) - pzcx2
-		err_x2 = tf.reduce_sum(pzcx1x2 * px1cx2[None,:,:],axis=1) - pzcx2
-		# compute the gradient 
-
-		#grad_p = ( (1+gamma) * (np.log(pzcx1x2)+1) \
-		#		+ (dual_z + penalty * err_z)[:,None,None]\
-		#		+ ((dual_x1 + penalty * err_x1)/px1[None,:])[:,:,None]\
-		#		+np.repeat(np.expand_dims((dual_x2 + penalty * err_x2)/px2[None,:],axis=1),repeats=len(px1),axis=1) )*px1x2[None,:,:]
-		grad_p = ( (1+gamma) * (tf.math.log(pzcx1x2)+1)\
-				+ (dual_z + penalty * err_z)[:,None,None]\
-				+ ((dual_x1 + penalty * err_x1)/px1[None,:])[:,:,None]\
-				+ tf.repeat(tf.expand_dims((dual_x2 + penalty * err_x2)/px2[None,:],axis=1),repeats=len(px1),axis=1) )*tf_px1x2[None,:,:]
-
-		#mean_grad_p = grad_p - np.mean(grad_p,axis=0)
-		mean_grad_p = grad_p - tf.reduce_mean(grad_p,axis=0)
-		#ss_p = gd.naiveStepSize(pzcx1x2,-mean_grad_p,ss_init,ss_scale)
-		ss_p = gd.tfNaiveSS(pzcx1x2,-mean_grad_p * mask_p,ss_init,ss_scale)
-		if ss_p == 0:
-			bad_fibers = tf.reduce_any(pzcx1x2 - mean_grad_p * 1e-9 >= 1.0, axis=0)
-			pzcx1x2[:,bad_fibers] = 0
-			#break
-		new_pzcx1x2 = pzcx1x2 - mean_grad_p * ss_p * mask_p
-		# new errors
-		#err_z = np.sum(new_pzcx1x2 * px1x2[None,:,:],axis=(1,2)) - pz
-		#err_x1= np.sum(new_pzcx1x2 * (px2cx1.T)[None,:,:],axis=2) - pzcx1
-		#err_x2= np.sum(new_pzcx1x2 * px1cx2[None,:,:],axis=1) - pzcx2
-		err_z = tf.reduce_sum(new_pzcx1x2 * tf_px1x2[None,:,:],axis=(1,2)) - pz
-		err_x1 = tf.reduce_sum(new_pzcx1x2 * tf.transpose(px2cx1)[None,:,:],axis=2) - pzcx1
-		err_x2 = tf.reduce_sum(new_pzcx1x2 * px1cx2[None,:,:],axis=1) - pzcx2
-		# daul updates
-		dual_z += penalty * err_z
-		dual_x1+= penalty * err_x1
-		dual_x2+= penalty * err_x2
-
-		# compute the augmented gradients
-		#grad_z = -(1-gamma) * (np.log(pz)+1) - dual_z - penalty*err_z
-		#mean_grad_z = grad_z - np.mean(grad_z,axis=0)
-		#ss_z = gd.naiveStepSize(pz,-mean_grad_z,ss_init,ss_scale)
-		grad_z = -(1-gamma) * (tf.math.log(pz)+1) - dual_z - penalty * err_z
-		mean_grad_z = grad_z - tf.reduce_mean(grad_z,axis=0)
-		grad_x1 = -gamma * (tf.math.log(pzcx1)+1)*px1[None,:] - dual_x1 - penalty * err_x1
-		mean_grad_x1 = grad_x1 - tf.reduce_mean(grad_x1,axis=0)
-		grad_x2 = -gamma * (tf.math.log(pzcx2)+1)*px2[None,:] - dual_x2 - penalty * err_x2
-		mean_grad_x2 = grad_x2 - tf.reduce_mean(grad_x2,axis=0)
-		ss_z = gd.tfNaiveSS(pz,-mean_grad_z * mask_z,ss_init,ss_scale)
-		if ss_z == 0:
-			#break
-			if tf.reduce_any(pz - mean_grad_z * 1e-9 >= 1.0):
-				mask_z = tf.zeros(pz.shape)
-			
-		#grad_x1= -gamma  * (np.log(pzcx1)+1) - dual_x1 - penalty * err_x1
-		#mean_grad_x1 = grad_x1 - np.mean(grad_x1,axis=0)
-		#ss_x1 = gd.naiveStepSize(pzcx1,-mean_grad_x1,ss_z,ss_scale)
-		ss_x1 = gd.tfNaiveSS(pzcx1,-mean_grad_x1 * mask_x1,ss_z,ss_scale)
-		if ss_x1 == 0:
-			#break
-			bad_cols = tf.reduce_any(pzcx1 - mean_grad_x1 * 1e-9 >= 1.0)
-			mask_x1[:,bad_cols] = 0 
-		#grad_x2 = -gamma * (np.log(pzcx2)+1) - dual_x2 - penalty * err_x2
-		#mean_grad_x2 = grad_x2 - np.mean(grad_x2,axis=0)
-		#ss_x2 = gd.naiveStepSize(pzcx2,-mean_grad_x2,ss_x1,ss_scale)
-		ss_x2 = gd.tfNaiveSS(pzcx2,-mean_grad_x2 * mask_x2,ss_x1,ss_scale)
-		if ss_x2 == 0:
-			#break
-			bad_cols = tf.reduce_any(pzcx2 - mean_grad_x2 * 1e-9 >= 1.0)
-			mask_x2[:,bad_cols] = 0
-		new_pz = pz - mean_grad_z * ss_x2 * mask_z
-		new_pzcx1 = pzcx1 - mean_grad_x1 * ss_x2 * mask_x1
-		new_pzcx2 = pzcx2 - mean_grad_x2 * ss_x2 * mask_x2
-		# new errors
-		#err_z = np.sum(new_pzcx1x2 * px1x2[None,:,:],axis=(1,2)) - new_pz
-		#err_x1= np.sum(new_pzcx1x2 * (px2cx1.T)[None,:,:],axis=2) - new_pzcx1
-		#err_x2= np.sum(new_pzcx1x2 * px1cx2[None,:,:],axis=1) - new_pzcx2
-		err_z = tf.reduce_sum(new_pzcx1x2 * tf_px1x2[None,:,:],axis=(1,2)) - new_pz
-		err_x1 = tf.reduce_sum(new_pzcx1x2 * tf.transpose(px2cx1)[None,:,:],axis=2) - new_pzcx1
-		err_x2 = tf.reduce_sum(new_pzcx1x2 * px1cx2[None,:,:],axis=1) - new_pzcx2
-		# convergence
-		#conv_z = np.sum(np.abs(err_z))
-		#conv_x1 = np.sum(np.abs(err_x1),axis=0)
-		#conv_x2 = np.sum(np.abs(err_x2),axis=0)
-		conv_z = 0.5*tf.reduce_sum(tf.math.abs(err_z * mask_z))
-		conv_x1 = 0.5*tf.reduce_sum(tf.math.abs(err_x1 * mask_x1),axis=0)
-		conv_x2 = 0.5*tf.reduce_sum(tf.math.abs(err_x2 * mask_x2),axis=0)
-		if tf.reduce_all(conv_z< convthres) and tf.reduce_all(conv_x1<convthres) and tf.reduce_all(conv_x2<convthres):
-			conv_flag = True
-			break
-		else:
-			pzcx1x2 = new_pzcx1x2
-			pz = new_pz
-			pzcx1 = new_pzcx1
-			pzcx2 = new_pzcx2
-
-	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2.numpy(),
-			"pz":pz.numpy(),"pzcx1":pzcx1.numpy(),"pzcx2":pzcx2.numpy(),
-			"dual_z":dual_z.numpy(),"dual_x1":dual_x1.numpy(),"dual_x2":dual_x2.numpy()}
-'''
 '''
 # logadmm for deterministic case
 def detLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
@@ -651,8 +461,8 @@ def detLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		d_seed = kwargs["seed"]
 	rng = np.random.default_rng(d_seed)
 	(nx1,nx2) = px1x2.shape
-	px2 = np.sum(px1x2,0)
-	px1 = np.sum(px1x2,1)
+	px2 = np.sum(px1x2,1)
+	px1 = np.sum(px1x2,0)
 	px1cx2 = px1x2 /px2[None,:]
 	px2cx1 = (px1x2/ px1[:,None]).T
 
@@ -790,8 +600,8 @@ def stoGradComp(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		d_seed = kwargs['seed']
 	rng = np.random.default_rng(d_seed)
 	(nx1,nx2) = px1x2.shape
-	px1 = np.sum(px1x2,0)
-	px2 = np.sum(px1x2,1)
+	px1 = np.sum(px1x2,1)
+	px2 = np.sum(px1x2,0)
 	px1cx2 = px1x2/px2[None,:]
 	px2cx1 = (px1x2/px1[:,None]).T
 	if "init_load" in kwargs.keys():
@@ -800,7 +610,7 @@ def stoGradComp(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		pzcx1x2 = rng.random((nz,nx1,nx2))
 		pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
 
-	mask_pzcx1x2 = np.ones(pzcx1x2.shape)
+	#mask_pzcx1x2 = np.ones(pzcx1x2.shape)
 	itcnt =0 
 	conv_flag = False
 	while itcnt < maxiter:
@@ -809,19 +619,21 @@ def stoGradComp(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		pz = np.sum(pzcx1x2*px1x2[None,:,:],axis=(1,2))
 		pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
 		pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
+		# calculate the gradient
 		grad_p = ((1+gamma) * (np.log(pzcx1x2)+1)) * px1x2[None,:,:]\
 					-(1-gamma) *( (np.log(pz) + 1)[:,None,None] * px1x2[None,:,:])\
 					-gamma * (np.log(pzcx1) +1)[:,:,None] * px1x2[None,:,:] \
-					-gamma * (np.log(np.repeat(np.expand_dims(pzcx2,axis=1),repeats=len(px1),axis=1))+1)*px1x2[None,:,:]
-		mean_grad_p = grad_p - np.mean(grad_p,axis=0)
-		ss_p = gd.naiveStepSize(pzcx1x2,-mean_grad_p * mask_pzcx1x2,ss_init,ss_scale)
+					-gamma * (np.log(np.repeat(np.expand_dims(pzcx2,axis=1),repeats=nx1,axis=1))+1)*px1x2[None,:,:]
+		mean_grad_p = grad_p - np.mean(grad_p,axis=0,keepdims=True)
+		ss_p = gd.naiveStepSize(pzcx1x2,-mean_grad_p,ss_init,ss_scale)
 		if ss_p == 0:
 			break
-		new_pzcx1x2 = pzcx1x2 - mean_grad_p * ss_p * mask_pzcx1x2
+		new_pzcx1x2 = pzcx1x2 - mean_grad_p * ss_p
+
 		# the compared method project the obtained encoder to the wyner setting
-		new_pz = np.sum(new_pzcx1x2 * px1x2[None,:,:],axis=(1,2))
-		ent_z = -np.sum(new_pz*np.log(new_pz))
-		ent_pzcx1x2 = -np.sum(new_pzcx1x2 * px1x2[None,:,:] * np.log(new_pzcx1x2))
+		#new_pz = np.sum(new_pzcx1x2 * px1x2[None,:,:],axis=(1,2))
+		#ent_z = -np.sum(new_pz*np.log(new_pz))
+		#ent_pzcx1x2 = -np.sum(new_pzcx1x2 * px1x2[None,:,:] * np.log(new_pzcx1x2))
 		# the convergence criterion of the reference uses
 		conv_z = 0.5 * np.sum(np.fabs(new_pzcx1x2 - pzcx1x2),axis=0) # total variation
 		if np.all(conv_z<convthres):
@@ -829,10 +641,75 @@ def stoGradComp(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 			break
 		else:
 			pzcx1x2 = new_pzcx1x2
+			pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
 	pz = np.sum(pzcx1x2*px1x2[None,:,:],axis=(1,2))
 	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
 	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2}
+'''
+def gdCompTwoStep(px1x2,nz,gamma,maxiter,convthres,**kwargs):
+	ss_init = kwargs['ss_init']
+	ss_scale = kwargs['ss_scale']
+	# extra convergence criterion
+	miC_thres = 1e-3
+	d_seed = None
+	if kwargs.get("seed",False):
+		d_seed = kwargs['seed']
+	rng = np.random.default_rng(d_seed)
+	(nx1,nx2) = px1x2.shape
+	px1 = np.sum(px1x2,1)
+	px2 = np.sum(px1x2,0)
+	px1cx2 = px1x2/px2[None,:]
+	px2cx1 = (px1x2/px1[:,None]).T
+	if "init_load" in kwargs.keys():
+		pzcx1x2 = kwargs['pzcx1x2']
+	else:
+		pzcx1x2 = rng.random((nz,nx1,nx2))
+		pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
+	itcnt =0
+	conv_flag = False
+	while itcnt < maxiter:
+		itcnt +=1
+		# auxiliary variables
+		pz = np.sum(pzcx1x2*px1x2[None,:,:],axis=(1,2))
+		pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
+		pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
+		# convergence metrics
+		entz = np.sum(-pz*np.log(pz))
+		entzcx1x2 = np.sum(-pzcx1x2*px1x2[None,:,:]*np.log(pzcx1x2))
+		mi_C = entz - entzcx1x2
+		# gradient
+		# C= I(X1,X2;Z) = H(Z) - H(Z|X1,X2)
+		grad_C = -px1x2[None,:,:]*(np.log(pz)+1)[:,None,None]\
+				+ px1x2[None,:,:]*(np.log(pzcx1x2)+1)
+		# J = I(X1;X2|Z) = I(X1,X2;Z) - I(X1;Z) - I(X2;Z) + I(X1,X2)
+		#   = -H(Z)-H(Z|X1,X2)+H(Z|X1)+H(Z|X2)
+		grad_J = px1x2[None,:,:]*(np.log(pz)+1)[:,None,None]\
+				+px1x2[None,:,:]*(np.log(pzcx1x2)+1)\
+				-px1x2[None,:,:]*(np.log(pzcx1)[:,:,None]+1)\
+				-px1x2[None,:,:]*(np.expand_dims(np.log(pzcx2),axis=1)+1)
+
+		grad_sum = grad_C + gamma * grad_J
+		mean_grad_sum = grad_sum - np.mean(grad_sum,axis=0)
+		ss_p = gd.naiveStepSize(pzcx1x2,-mean_grad_sum,ss_init,ss_scale)
+		if ss_p ==0:
+			break
+		new_pzcx1x2 = pzcx1x2 - mean_grad_sum*ss_p
+		# convergence
+		new_pz = np.sum(new_pzcx1x2*px1x2[None,:,:],axis=(1,2))
+		new_entz = np.sum(-new_pz * np.log(new_pz))
+		new_pzcx1 = np.sum(new_pzcx1x2 * px1cx2[None,:,:],axis=2)
+		new_pzcx2 = np.sum(new_pzcx1x2 * np.expand_dims(px2cx1,axis=1),axis=1)
+		new_entzcx1x2 = np.sum(-new_pzcx1x2 * px1x2[None,:,:] * np.log(new_pzcx1x2))
+		new_mi_C = new_entz - new_entzcx1x2
+		diff_mi_C = np.fabs(new_mi_C - mi_C)
+		if diff_mi_C<miC_thres:
+			break
+		else:
+			pzcx1x2 = new_pzcx1x2
+
+	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2}
+'''
 '''
 def stoLogGrad(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	ss_fixed = kwargs['ss_init']
@@ -841,8 +718,8 @@ def stoLogGrad(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		d_seed = kwargs['seed']
 	rng = np.random.default_rng(d_seed)
 	(nx1,nx2) = px1x2.shape
-	px1 = np.sum(px1x2,0)
-	px2 = np.sum(px1x2,1)
+	px1 = np.sum(px1x2,1)
+	px2 = np.sum(px1x2,0)
 	px1cx2 = px1x2/px2[None,:]
 	px2cx1 = (px1x2/px1[:,None]).T
 	if "init_load" in kwargs.keys():
@@ -893,8 +770,8 @@ def stoLogDRS(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		d_seed = kwargs['seed']
 	rng = np.random.default_rng(d_seed)
 	(nx1,nx2) = px1x2.shape
-	px1 = np.sum(px1x2,0)
-	px2 = np.sum(px1x2,1)
+	px1 = np.sum(px1x2,1)
+	px2 = np.sum(px1x2,0)
 	px1cx2 = px1x2/px2[None,:]
 	px2cx1 = (px1x2/px1[:,None]).T
 	if "init_load" in kwargs.keys():
@@ -976,8 +853,8 @@ def stoLogDrsVar(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		d_seed = kwargs['seed']
 	rng = np.random.default_rng(d_seed)
 	(nx1,nx2) = px1x2.shape
-	px1 = np.sum(px1x2,0)
-	px2 = np.sum(px1x2,1)
+	px1 = np.sum(px1x2,1)
+	px2 = np.sum(px1x2,0)
 	px1cx2 = px1x2/px2[None,:]
 	px2cx1 = (px1x2/px1[:,None]).T
 	if "init_load" in kwargs.keys():
@@ -1001,7 +878,7 @@ def stoLogDrsVar(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		raw_mlog_pzcx1x2 = mlog_pzcx1x2 - grad_p * ss_fixed
 		min_p = np.amin(raw_mlog_pzcx1x2,axis=0)
 		min_p = np.where(min_p<0.0,min_p,np.zeros((nx1,nx2)))
-		prj_mlog_p = raw_mlog_pzcx1x2 - min_p
+		prj_mlog_p = raw_mlog_pzcx1x2 - min_p[None,:,:]
 		raw_pzcx1x2 = np.exp(-prj_mlog_p) + 1e-9
 		new_pzcx1x2 = raw_pzcx1x2 / np.sum(raw_pzcx1x2,axis=0,keepdims=True)
 		new_mlog_pzcx1x2 = -np.log(new_pzcx1x2)
@@ -1022,7 +899,7 @@ def stoLogDrsVar(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		raw_mlog_q = mlog_q - grad_q * ss_fixed
 		min_q = np.amin(raw_mlog_q,axis=0)
 		min_q = np.where(min_q<0.0,min_q,np.zeros((nx1,nx2)))
-		prj_mlog_q = raw_mlog_q - min_q
+		prj_mlog_q = raw_mlog_q - min_q[None,:,:]
 		raw_q = np.exp(-prj_mlog_q) + 1e-9
 		new_q = raw_q / np.sum(raw_q,axis=0,keepdims=True)
 		new_mlog_q = -np.log(new_q)
@@ -1049,8 +926,8 @@ def detLogDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		d_seed = kwargs['seed']
 	rng = np.random.default_rng(d_seed)
 	(nx1,nx2) = px1x2.shape
-	px1 = np.sum(px1x2,0)
-	px2 = np.sum(px1x2,1)
+	px1 = np.sum(px1x2,1)
+	px2 = np.sum(px1x2,0)
 	px1cx2 = px1x2/px2[None,:]
 	px2cx1 = (px1x2/px1[:,None]).T
 	if "init_load" in kwargs.keys():
@@ -1078,7 +955,7 @@ def detLogDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		# projection
 		min_p = np.amin(raw_mlog_pzcx1x2,axis=0)
 		min_p = np.where(min_p<0.0,min_p,np.zeros((nx1,nx2)))
-		prj_mlog_p = raw_mlog_pzcx1x2 - min_p
+		prj_mlog_p = raw_mlog_pzcx1x2 - min_p[None,:,:]
 		raw_pzcx1x2 = np.exp(-prj_mlog_p) + 1e-9
 		new_p = raw_pzcx1x2 / np.sum(raw_pzcx1x2,axis=0,keepdims=True)
 		new_mlog_pzcx1x2 = -np.log(new_p)
@@ -1099,7 +976,7 @@ def detLogDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		raw_mlog_q = mlog_q - ss_fixed * grad_q
 		min_q = np.amin(raw_mlog_q,axis=0)
 		min_q = np.where(min_q<0.0,min_q,np.zeros((nx1,nx2)))
-		prj_mlog_q = raw_mlog_q - min_q
+		prj_mlog_q = raw_mlog_q - min_q[None,:,:]
 		raw_q = np.exp(-prj_mlog_q) + 1e-9
 		new_q = raw_q/np.sum(raw_q,axis=0,keepdims=True)
 		new_mlog_q = -np.log(new_q)
@@ -1120,3 +997,102 @@ def detLogDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
 	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"dual_p":dual_p,}
+
+# dev
+# scalable splitting method based wyner common information solver.
+# 
+def wynerDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
+	ss_fixed = kwargs['ss_init']
+	d_seed = None
+	penalty = kwargs['penalty_coeff']
+	penalty_max = kwargs['penalty_coeff']
+	#penalty = 1.0
+	if kwargs.get("seed",False):
+		d_seed = kwargs['seed']
+	rng = np.random.default_rng(d_seed)
+	(nx1,nx2) = px1x2.shape
+	px1 = np.sum(px1x2,1)
+	px2 = np.sum(px1x2,0)
+	px1cx2 = px1x2/px2[None,:]
+	px2cx1 = (px1x2/px1[:,None]).T
+	if "init_load" in kwargs.keys():
+		#pzcx1x2 = kwargs['pzcx1x2']
+		px1cz = kwargs['px1cz']
+		px2cz = kwargs['px2cz']
+	else:
+		px1cz = rng.random((nx1,nz))
+		px1cz /= np.sum(px1cz,axis=0,keepdims=True)
+		px2cz = rng.random((nx2,nz))
+		px2cz /= np.sum(px2cz,axis=0,keepdims=True)
+		# NOTE: Assume p(z) is uniformly distributed 
+		# initial pzcx1x2 is the softmax of the product px1cz, px2cz
+	def softmaxFromLog(log_px1cz,log_px2cz):
+		expand_log_px1cz_T = np.repeat(np.expand_dims(log_px1cz.T,axis=2),repeats=nx2,axis=2)
+		expand_log_px2cz_T = np.repeat(np.expand_dims(log_px2cz.T,axis=1),repeats=nx1,axis=1)
+		return softmax(expand_log_px1cz_T + expand_log_px2cz_T, axis=0)
+	def probNumerator(log_px1cz,log_px2cz,nz):
+		expand_log_px1cz_T = np.repeat(np.expand_dims(log_px1cz.T,axis=2),repeats=nx2,axis=2)
+		expand_log_px2cz_T = np.repeat(np.expand_dims(log_px2cz.T,axis=1),repeats=nx1,axis=1)
+		return np.exp(expand_log_px1cz_T + expand_log_px2cz_T)/nz
+	log_px1cz = np.log(px1cz)
+	log_px2cz = np.log(px2cz)
+	pzcx1x2 = softmaxFromLog(log_px1cz,log_px2cz)
+	# dual...
+	dual_v = np.zeros((nx1,nx2))
+	itcnt =0 
+	conv_flag = False
+	while itcnt < maxiter:
+		itcnt +=1
+		# check function value for debugging and performance
+		pzcx1x2 = softmaxFromLog(log_px1cz,log_px2cz)
+		prob_num = probNumerator(log_px1cz,log_px2cz,nz)
+		est_px1x2 = np.sum(prob_num,axis=0)
+		#print("error",0.5*np.sum(np.fabs(est_px1x2 - px1x2)))
+		#print(np.sum(pzcx1x2 * est_px1x2[None,:,:]))
+		grad_x1 = (1/nz) * (1+log_px1cz)*np.exp(log_px1cz)
+		grad_x1 += penalty * np.sum(prob_num*(np.log(prob_num)-np.log(px1x2)[None,:,:]+1),axis=2).T
+		# projection onto the negative real line
+		raw_log_px1cz = log_px1cz - ss_fixed * grad_x1
+		max_x1 = np.amax(raw_log_px1cz,axis=0)
+		max_x1 = np.where(max_x1>0.0,max_x1,np.zeros((nz)))
+		raw_log_px1cz -= max_x1[None,:]
+		raw_px1cz = np.exp(raw_log_px1cz) + 1e-9 # smoothing
+		new_px1cz = raw_px1cz / np.sum(raw_px1cz,axis=0,keepdims=True)
+		new_log_px1cz = np.log(new_px1cz)
+
+		prob_num = probNumerator(new_log_px1cz,log_px2cz,nz)
+		grad_x2 = (1/nz) * (1+log_px2cz)*np.exp(log_px2cz)
+		grad_x2 += penalty * np.sum(prob_num*(np.log(prob_num)-np.log(px1x2)[None,:,:]+1),axis=1).T
+
+		raw_log_px2cz = log_px2cz - ss_fixed * grad_x2
+		max_x2 = np.amax(raw_log_px2cz,axis=0)
+		max_x2 = np.where(max_x2>0.0,max_x2,np.zeros((nz)))
+		raw_log_px2cz -= max_x2[None,:]
+		raw_px2cz = np.exp(raw_log_px2cz) + 1e-9
+		new_px2cz = raw_px2cz / np.sum(raw_px2cz,axis=0,keepdims=True)
+		new_log_px2cz = np.log(new_px2cz)
+		#
+		prob_num = probNumerator(new_log_px1cz,new_log_px2cz,nz)
+		
+		err_x12 = np.sum(prob_num,axis=0) - px1x2 
+
+		# convergence
+		dtv_x1x2 = 0.5 * np.sum(np.fabs(err_x12))
+		if itcnt % 10000 ==0:
+			print(np.sum(prob_num,axis=0))
+			#print(grad_x1)
+			print("iteration:{:}, error:{:}".format(itcnt,dtv_x1x2))
+		if dtv_x1x2<convthres:
+			conv_flag = True
+			break
+		else:
+			penalty *= 1.1
+			penalty = min(penalty,penalty_max)
+			log_px1cz = new_log_px1cz
+			log_px2cz = new_log_px2cz
+
+	pzcx1x2 =softmaxFromLog(log_px1cz,log_px2cz)
+	pz = np.sum(pzcx1x2 * px1x2[None,:,:],axis=(1,2))
+	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
+	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
+	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"dual_v":dual_v,}

@@ -11,23 +11,25 @@ import datetime
 import copy
 
 parser = argparse.ArgumentParser()
-parser.add_argument("method",choices=["admmgd","gdbaseline","loggd",'logdrs','logdrsvar'])
+parser.add_argument("method",choices=["admmgd",'gddrs',"gdbaseline","loggd",'logdrs','logdrsvar'])
 parser.add_argument("--penalty",type=float,default=128.0,help="penalty coefficient of the ADMM solver")
-parser.add_argument("--maxiter",type=int,default=100000,help="maximum iteration before termination")
+parser.add_argument("--maxiter",type=int,default=300000,help="maximum iteration before termination")
 parser.add_argument("--convthres",type=float,default=1e-6,help="convergence threshold")
-parser.add_argument("--nrun",type=int,default=10,help="number of trail of each simulation")
+parser.add_argument("--nrun",type=int,default=5,help="number of trail of each simulation")
 parser.add_argument("--ss_init",type=float,default=1e-2,help="step size initialization")
 parser.add_argument("--ss_scale",type=float,default=0.25,help="step size scaling")
-parser.add_argument("--output_dir",type=str,default="unsu_sto_results",help="output filename")
+parser.add_argument("--output_dir",type=str,default="unsu_sto_test_results",help="output filename")
 parser.add_argument("--seed",type=int,default=None,help="random seed for reproduction")
-parser.add_argument("--ny",type=int,default=2,help="number of uniform hidden labels")
+parser.add_argument("--ny",type=int,default=8,help="number of uniform hidden labels")
 parser.add_argument("--nb",type=int,default=2,help="number of blocks for observations")
 parser.add_argument("--corr",type=float,default=0,help="cyclic observation uncertainty given a label")
-parser.add_argument("--gamma_min",type=float,default=0.5,help="minimum gamma value")
-parser.add_argument("--gamma_max",type=float,default=10.0,help="maximum gamma value")
+parser.add_argument("--gamma_min",type=float,default=1.0,help="minimum gamma value")
+parser.add_argument("--gamma_max",type=float,default=50.0,help="maximum gamma value")
 # the maximum value is always 1. otherwise a different problem
-parser.add_argument("--gamma_num",type=int,default=10,help="number of gamma values")
-parser.add_argument("--encoder",action="store_true",default=False,help="storing all the encoders found")
+parser.add_argument("--gamma_num",type=int,default=20,help="number of gamma values")
+#parser.add_argument("--encoder",action="store_true",default=False,help="storing all the encoders found")
+#parser.add_argument("--test",action="store_true",default=True,help="enabling testing for synthetic clustering")
+parser.add_argument("--zsearch",action="store_true",default=False,help="no knowledge of the number of clusters")
 
 args = parser.parse_args()
 argsdict = vars(args)
@@ -35,7 +37,6 @@ argsdict = vars(args)
 print(argsdict)
 
 data_dict = dt.synExpandToy(args.ny,args.nb,args.corr)
-#sys.exit()
 prob_joint = data_dict["p_joint"]
 px1 = np.sum(prob_joint,1)
 px2 = np.sum(prob_joint,0)
@@ -60,6 +61,8 @@ alg_dict = {
 # algorithm selection
 if args.method == "admmgd":
 	algrun = alg.admmHighDim
+elif args.method == "gddrs":
+	algrun = alg.stoGdDrs
 #elif args.method == "tfadmmgd":
 #	algrun = alg.tfStoComAdmm
 #elif args.method == "logadmm":
@@ -75,13 +78,26 @@ elif args.method == "logdrsvar":
 else:
 	sys.exit("undefined method {:}".format(args.method))
 
-encoder_dict = {}
+# loading testing data # FIXME: manually loaded
+# FIXME: only holds for ny=8, nb=2, corr=0, or corr=0.2
+#with open("test_opt_y8b2_cr0.0000e+00_obs.npy",'rb') as fid:
+#	test_obs_y8b2_c00 = np.load(fid)
+#with open("test_opt_y8b2_cr0.0000e+00_label.npy",'rb') as fid:
+#	test_label_y8b2_c00 = np.load(fid)
 
-nz_set = np.arange(2,len(px1)*len(px2)+1,1)
+# saving the encoders 
+#encoder_dict = {}
+encoder_list =[]
+
+if args.zsearch:
+	nz_set = np.arange(2,len(px1)*len(px2)+1,1)
+else:
+	nz_set = np.array([args.ny]) # FIXME: assume knowing the cardinality of Z
 res_all = np.zeros((len(gamma_range)*args.nrun*len(nz_set),11)) # gamma, nidx, niter, conv,nz, entz, mizx1,mizx2,joint_MI, loss, cmix1x2cz
+#res_all = np.zeros((len(gamma_range)*args.nrun*len(nz_set),12)) # gamma, nidx, niter, conv,nz, entz, mizx1,mizx2,joint_MI, loss, cmix1x2cz, best_acc
 rec_idx = 0
 for gidx ,gamma in enumerate(gamma_range):
-	encoder_dict[gidx] = {}
+	#encoder_dict[gidx] = {}
 	for nz in nz_set:
 		for nn in range(args.nrun):
 			out_dict = algrun(prob_joint,nz,gamma,args.maxiter,args.convthres,**alg_dict)
@@ -99,8 +115,6 @@ for gidx ,gamma in enumerate(gamma_range):
 
 			pzx1x2 = pzcx1x2 * prob_joint[None,:,:]
 			entzcx1x2 = -np.sum(pzx1x2 * np.log(pzcx1x2))
-			if args.encoder:
-				encoder_dict[gidx][nn] = pzcx1x2
 			# take the maximum element
 			mizx1 = ut.calcMI(pzcx1 * px1[None,:])
 			mizx2 = ut.calcMI(pzcx2 * px2[None,:])
@@ -108,10 +122,10 @@ for gidx ,gamma in enumerate(gamma_range):
 			# loss calculation
 			joint_mi = entz - entzcx1x2
 			tmp_loss = (1+gamma)*joint_mi - gamma * mizx1 - gamma * mizx2
+			# clustering accuracy
 			tmp_result += [entz,mizx1,mizx2,joint_mi,tmp_loss,cmix1x2cz]
-				
 			res_all[rec_idx,:] = np.array(tmp_result)
-			print("gamma,{:.4f},ntrial,{:},nz,{:},convergence,{:},niter,{:},I(X1,X2;Z),{:.6f},H(Z),{:.6f},tmp_loss,{:.5f},I(X1;X2|Z),{:.5f}".format(gamma,nn,nz,int(out_dict["conv"]),out_dict["niter"],joint_mi,entz,tmp_loss,cmix1x2cz))
+			print("gamma,{:.3f},nidx,{:},nz,{:},conv,{:},nit,{:},I(X1,X2;Z),{:.5f},H(Z),{:.5f},loss,{:.4f},I(X1;X2|Z),{:.5f}".format(gamma,nn,nz,int(out_dict["conv"]),out_dict["niter"],joint_mi,entz,tmp_loss,cmix1x2cz))
 			rec_idx += 1
 
 timenow= datetime.datetime.now()
@@ -131,9 +145,6 @@ while os.path.isfile(os.path.join(d_save_dir,safe_savename)):
 with open(os.path.join(d_save_dir,safe_savename+".npy"),"wb") as fid:
 	np.save(fid,res_all)
 # saving the encoders
-if args.encoder:
-	with open(os.path.join(d_save_dir,safe_savename+"_encoders.pkl"),"wb") as fid:
-		pickle.dump(encoder_dict,fid)
 # saving the configuration in case of error
 with open(os.path.join(d_save_dir,safe_savename+"_config.pkl"),"wb") as fid:
 	pickle.dump(argsdict,fid)

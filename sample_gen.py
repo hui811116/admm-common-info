@@ -2,40 +2,17 @@ import numpy as np
 import dataset as dt
 import sys
 import os
+import pickle
 
-rng = np.random.default_rng()
+rng = np.random.default_rng(seed=1234)
 
-#datadict = dt.getDataset("condindp2v")
-dataname = "toy2v"
-datadict = dt.getDataset(dataname)
-#print(datadict)
+ny = 8
+nb = 2
+corr =0.2    # 0.2, seed 1234, 0.0, seed 4321
+datadict = dt.synExpandToy(ny,nb,corr)
 if not "py" in datadict.keys():
 	sys.exit("Dataset {:} has no hidden labels".format(dataname))
 
-'''
-# CondIndp
-py = np.array([0.25,0.40,0.35])
-px1cy = np.array([
-	[0.85, 0.04 , 0.06],
-	[0.07, 0.40 , 0.60],
-	[0.08, 0.56 , 0.34]])
-px2cy = np.array([
-	[0.30, 0.08, 0.35],
-	[0.40, 0.80, 0.15],
-	[0.30, 0.12, 0.50]])
-'''
-# Overlap
-'''
-py = np.array([0.25,0.40,0.35])
-px1cy = np.array([
-	[0.85, 0.04 , 0.06],
-	[0.07, 0.40 , 0.80],
-	[0.08, 0.56 , 0.14]])
-px2cy = np.array([
-	[0.30, 0.08, 0.05],
-	[0.40, 0.80, 0.05],
-	[0.30, 0.12, 0.90]])
-'''
 py = datadict["py"]
 px1cy = datadict["pycx_list"][0]
 px2cy = datadict["pycx_list"][1]
@@ -50,8 +27,43 @@ for ix1 in range(len(px1)):
 			tmp_sum += py[iy] * px1cy[ix1,iy] * px2cy[ix2,iy]
 		px12[ix1,ix2]= tmp_sum
 
-n_samp = 5000
+n_samp = 100000 # for training
+n_train = 10000 # for testing 
+def inverseTransformSampling(num_samp,py,px1cy,px2cy):
+	label_samp = rng.random((num_samp,))
+	ymap = np.cumsum(py)
+	ylabel = -1 * np.ones((num_samp,))
+	for idx,prob in enumerate(label_samp):
+		for yi in range(len(ymap)):
+			if prob < ymap[yi]:
+				ylabel[idx] = yi
+				break
+	if np.any(ylabel<0):
+		sys.exit("ERROR: some samples have no label")
+	ylabel = ylabel.astype("int")
+	# get observations
+	x_prob = rng.random((num_samp,2)) # 2 views
+	x_sample = -1 * np.ones((num_samp,2))
+	for idx in range(num_samp):
+		ytmp = ylabel[idx]
+		prob1 = x_prob[idx,0]
+		prob2 = x_prob[idx,1]
+		x1_map = np.cumsum(px1cy[:,ytmp])
+		for xi in range(len(px1)):
+			if prob1 < x1_map[xi]:
+				x_sample[idx,0] = xi
+				break
+		x2_map = np.cumsum(px2cy[:,ytmp])
+		for xi in range(len(px2)):
+			if prob2 < x2_map[xi]:
+				x_sample[idx,1] = xi
+				break
+	if np.any(x_sample<0):
+		sys.exit("ERROR: some observations have no realization")
+	x_sample = x_sample.astype("int")
+	return {"ylabel":ylabel,"xsample":x_sample,"ny":len(py),"nx1":px1cy.shape[0],"nx2":px2cy.shape[0]}
 # inverse transform sampling
+'''
 label_samp = rng.random((n_samp,))
 y_map = np.cumsum(py)
 y_label = -1 * np.ones((n_samp,))
@@ -86,10 +98,16 @@ for idx in range(n_samp):
 if np.any(x_sample<0):
 	sys.exit("ERROR: some observations have no realization")
 x_sample = x_sample.astype("int")
-
+'''
+train_dict = inverseTransformSampling(n_train,py,px1cy,px2cy)
+test_dict = inverseTransformSampling(n_samp,py,px1cy,px2cy)
+with open("opt_y{:}b{:}_cr{:.4e}_dataset.pkl".format(ny,nb,corr),'wb') as fid:
+	pickle.dump({"train_dict":train_dict,"test_dict":test_dict},fid)
 
 # all passed
-with open("test_{:}_label.npy".format(dataname),'wb') as fid:
+'''
+with open("test_opt_y{:}b{:}_cr{:.4e}_label.npy".format(ny,nb,corr),'wb') as fid:
 	np.save(fid,y_label)
-with open("test_{:}_obs.npy".format(dataname),"wb") as fid:
+with open("test_opt_y{:}b{:}_cr{:.4e}_obs.npy".format(ny,nb,corr),"wb") as fid:
 	np.save(fid,x_sample)
+'''

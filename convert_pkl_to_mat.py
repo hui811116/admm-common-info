@@ -29,7 +29,7 @@ with open(filename+"_config.pkl","rb") as fid:
 # NEW format
 # header
 # # gamma, nidx, niter, conv,nz, entz, mizx1,mizx2,joint_mi, loss, cmix1x2cz
-header = ["gamma","nidx","niter",'conv','nz',"entz",'mizx1','mizx2','jointMI','condMI']
+header = ["gamma","nidx","niter",'conv','nz',"entz",'mizx1','mizx2','jointMI',"loss",'condMI']
 # extract gamma,niter,nz,entz,mizx1,mizx2,joint_mi, cmix1x2cz
 # and put it into matlab array
 extracted_list = ['gamma','niter','conv','nz','entz','mizx1','mizx2','jointMI','condMI']
