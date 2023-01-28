@@ -32,7 +32,7 @@ argsdict = vars(args)
 print(argsdict)
 
 dataset_dict = dt.loadSampleData(args.dataset)
-dataname  = ".".join((os.path.split(args.dataset_dict)[1]).split(".")[:-1])
+dataname  = ".".join((os.path.split(args.dataset)[1]).split(".")[:-1])
 print(dataname)
 y_train, x_train = dataset_dict['ytrain'],dataset_dict['xtrain']
 y_test, x_test   = dataset_dict['ytest'], dataset_dict['xtest']
