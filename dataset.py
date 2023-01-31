@@ -4,7 +4,8 @@ import sys
 import copy
 import pickle
 
-def getDataset(stext):
+'''
+def getDataset(stext,**kwargs):
 	if stext == "syn2v":
 		return syn2views()
 	elif stext == "condindp2v":
@@ -13,9 +14,11 @@ def getDataset(stext):
 		return syn2Overlap()
 	elif stext == "toy2v":
 		return synToy()
+	elif stext == "toynv":
+		return synToyNview(kwargs)
 	else:
 		sys.exit("ERROR: {:} does not match any defined dataset".format(stext))
-
+'''
 def syn2views():
 	# data
 	# Statistics
@@ -123,6 +126,10 @@ def synToy():
 	px1cx2 = px12 / px2[None,:]
 	px2cx1 = (px12/px1[:,None]).T
 	return {"p_joint":px12,"px_list":[px1,px2],"p_cond":[px1cx2,px2cx1],"pycx_list":[px1cy,px2cy],"py":py}
+
+#TODO: nview dataset
+#def synToyNview(ny):
+#	return 
 '''
 def synExpandToy(ny,nx,corr):
 	eps_min = 1e-7

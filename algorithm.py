@@ -1005,7 +1005,7 @@ def wynerDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	ss_fixed = kwargs['ss_init']
 	d_seed = None
 	penalty = kwargs['penalty_coeff']
-	penalty_max = kwargs['penalty_coeff']
+	#penalty_max = kwargs['penalty_coeff']
 	#penalty = 1.0
 	if kwargs.get("seed",False):
 		d_seed = kwargs['seed']
@@ -1026,73 +1026,93 @@ def wynerDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		px2cz /= np.sum(px2cz,axis=0,keepdims=True)
 		# NOTE: Assume p(z) is uniformly distributed 
 		# initial pzcx1x2 is the softmax of the product px1cz, px2cz
-	def softmaxFromLog(log_px1cz,log_px2cz):
-		expand_log_px1cz_T = np.repeat(np.expand_dims(log_px1cz.T,axis=2),repeats=nx2,axis=2)
-		expand_log_px2cz_T = np.repeat(np.expand_dims(log_px2cz.T,axis=1),repeats=nx1,axis=1)
-		return softmax(expand_log_px1cz_T + expand_log_px2cz_T, axis=0)
-	def probNumerator(log_px1cz,log_px2cz,nz):
-		expand_log_px1cz_T = np.repeat(np.expand_dims(log_px1cz.T,axis=2),repeats=nx2,axis=2)
-		expand_log_px2cz_T = np.repeat(np.expand_dims(log_px2cz.T,axis=1),repeats=nx1,axis=1)
-		return np.exp(expand_log_px1cz_T + expand_log_px2cz_T)/nz
+	def expandLogPxcz(log_pxxcz,adim,ndim):
+		# return dim (z,x1,x2)
+		return np.repeat(np.expand_dims(log_pxxcz.T,axis=adim),repeats=ndim,axis=adim)
+	def calcProdProb(log_px1cz,log_px2cz,nz):
+		expand_log_px1cz = expandLogPxcz(log_px1cz,adim=2,ndim=nx2)
+		expand_log_px2cz = expandLogPxcz(log_px2cz,adim=1,ndim=nx1)
+		return np.exp(expand_log_px1cz+expand_log_px2cz)/nz
+	def calcPx1x2(log_px1cz,log_px2cz,nz):
+		pzx1x2 = calcProdProb(log_px1cz,log_px2cz,nz)
+		return np.sum(pzx1x2,axis=0)
+	def calcDtvError(log_px1cz,log_px2cz,nz,px1x2):
+		pzx1x2 = calcProdProb(log_px1cz,log_px2cz,nz)
+		est_px1x2 = np.sum(pzx1x2,axis=0)
+		return 0.5 * np.sum(np.fabs(est_px1x2 - px1x2))
+	def calcProbSoftmax(log_px1cz,log_px2cz):
+		expand_log_px1cz = expandLogPxcz(log_px1cz,adim=2,ndim=nx2)
+		expand_log_px2cz = expandLogPxcz(log_px2cz,adim=1,ndim=nx1)
+		return softmax(expand_log_px1cz+expand_log_px2cz,axis=0)
 	log_px1cz = np.log(px1cz)
 	log_px2cz = np.log(px2cz)
-	pzcx1x2 = softmaxFromLog(log_px1cz,log_px2cz)
-	# dual...
-	dual_v = np.zeros((nx1,nx2))
+	# helping constants
+	const_logpx1x2 = np.log(px1x2)
 	itcnt =0 
 	conv_flag = False
 	while itcnt < maxiter:
 		itcnt +=1
-		# check function value for debugging and performance
-		pzcx1x2 = softmaxFromLog(log_px1cz,log_px2cz)
-		prob_num = probNumerator(log_px1cz,log_px2cz,nz)
-		est_px1x2 = np.sum(prob_num,axis=0)
-		#print("error",0.5*np.sum(np.fabs(est_px1x2 - px1x2)))
-		#print(np.sum(pzcx1x2 * est_px1x2[None,:,:]))
-		grad_x1 = (1/nz) * (1+log_px1cz)*np.exp(log_px1cz)
-		grad_x1 += penalty * np.sum(prob_num*(np.log(prob_num)-np.log(px1x2)[None,:,:]+1),axis=2).T
-		# projection onto the negative real line
-		raw_log_px1cz = log_px1cz - ss_fixed * grad_x1
+		est_px1x2 = calcPx1x2(log_px1cz,log_px2cz,nz)
+		dtv_error = 0.5 * np.sum(np.fabs(est_px1x2 - px1x2))
+		pzcx1x2 = calcProbSoftmax(log_px1cz,log_px2cz)
+		# grad1
+		pzx1x2  = calcProdProb(log_px1cz,log_px2cz,nz)
+		grad_x1 = (1/nz) * np.exp(log_px1cz) * (1+log_px1cz) - np.sum(pzx1x2 * (const_logpx1x2[None,:,:]),axis=2).T
+		grad_x1 += penalty * np.sum(-px1x2[None,:,:] * pzcx1x2,axis=2).T
+		raw_log_px1cz = log_px1cz - grad_x1 * ss_fixed
+		# projection
 		max_x1 = np.amax(raw_log_px1cz,axis=0)
-		max_x1 = np.where(max_x1>0.0,max_x1,np.zeros((nz)))
+		max_x1 = np.where(max_x1>0.0,max_x1,np.zeros((nz,)))
 		raw_log_px1cz -= max_x1[None,:]
-		raw_px1cz = np.exp(raw_log_px1cz) + 1e-9 # smoothing
-		new_px1cz = raw_px1cz / np.sum(raw_px1cz,axis=0,keepdims=True)
-		new_log_px1cz = np.log(new_px1cz)
+		raw_px1cz = np.exp(raw_log_px1cz) + 1e-9
+		raw_px1cz /= np.sum(raw_px1cz,axis=0,keepdims=True)
+		new_log_px1cz = np.log(raw_px1cz)
 
-		prob_num = probNumerator(new_log_px1cz,log_px2cz,nz)
-		grad_x2 = (1/nz) * (1+log_px2cz)*np.exp(log_px2cz)
-		grad_x2 += penalty * np.sum(prob_num*(np.log(prob_num)-np.log(px1x2)[None,:,:]+1),axis=1).T
-
-		raw_log_px2cz = log_px2cz - ss_fixed * grad_x2
+		# update
+		pzx1x2 = calcProdProb(new_log_px1cz,log_px2cz,nz)
+		pzcx1x2 = calcProbSoftmax(new_log_px1cz,log_px2cz)
+		# gradient v2
+		grad_x2 = (1/nz) * np.exp(log_px2cz) * (1+log_px2cz) - np.sum(pzx1x2 * (const_logpx1x2[None,:,:]),axis=1).T
+		grad_x2 += penalty * np.sum(-px1x2[None,:,:]*pzcx1x2,axis=1).T
+		raw_log_px2cz = log_px2cz - grad_x2 * ss_fixed
+		# projection
 		max_x2 = np.amax(raw_log_px2cz,axis=0)
-		max_x2 = np.where(max_x2>0.0,max_x2,np.zeros((nz)))
+		max_x2 = np.where(max_x2>0.0,max_x2,np.zeros((nz,)))
 		raw_log_px2cz -= max_x2[None,:]
 		raw_px2cz = np.exp(raw_log_px2cz) + 1e-9
-		new_px2cz = raw_px2cz / np.sum(raw_px2cz,axis=0,keepdims=True)
-		new_log_px2cz = np.log(new_px2cz)
-		#
-		prob_num = probNumerator(new_log_px1cz,new_log_px2cz,nz)
-		
-		err_x12 = np.sum(prob_num,axis=0) - px1x2 
-
-		# convergence
-		dtv_x1x2 = 0.5 * np.sum(np.fabs(err_x12))
-		if itcnt % 10000 ==0:
-			print(np.sum(prob_num,axis=0))
-			#print(grad_x1)
-			print("iteration:{:}, error:{:}".format(itcnt,dtv_x1x2))
-		if dtv_x1x2<convthres:
-			conv_flag = True
+		raw_px2cz /= np.sum(raw_px2cz,axis=0,keepdims=True)
+		new_log_px2cz = np.log(raw_px2cz)
+		# update
+		dtv_error = calcDtvError(new_log_px1cz,new_log_px2cz,nz,px1x2)
+		log_px1cz = new_log_px1cz
+		log_px2cz = new_log_px2cz
+		# debugging blocks
+		'''
+		if itcnt >0:
+			pzx1x2 = calcProdProb(new_log_px1cz,new_log_px2cz,nz)
+			print("current error={:.6f}".format(dtv_error))
+			print("px1cz")
+			print(np.exp(log_px1cz))
+			print("px2cz")
+			print(np.exp(log_px2cz))
+			print("est px1x2")
+			print(calcPx1x2(log_px1cz,log_px2cz,nz))
+			print("gradients")
+			print(grad_x1)
+			print(grad_x2)
+			print("grad_components")
+			print(np.sum(pzx1x2 * const_logpx1x2[None,:,:],axis=2).T)
+			print(np.sum(pzx1x2 * const_logpx1x2[None,:,:],axis=1).T)
+		'''
+		if dtv_error < convthres:
+			conv_flag= True
 			break
-		else:
-			penalty *= 1.1
-			penalty = min(penalty,penalty_max)
-			log_px1cz = new_log_px1cz
-			log_px2cz = new_log_px2cz
-
-	pzcx1x2 =softmaxFromLog(log_px1cz,log_px2cz)
-	pz = np.sum(pzcx1x2 * px1x2[None,:,:],axis=(1,2))
-	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
-	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
-	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"dual_v":dual_v,}
+	# est pzx1x1
+	pzx1x2 = calcProdProb(log_px1cz,log_px2cz,nz)
+	pzcx1x2 = pzx1x2 / np.sum(pzx1x2,axis=0,keepdims=True)
+	pz = np.sum(pzx1x2,axis=(1,2))
+	pzx1 = np.sum(pzx1x2,axis=2)
+	pzcx1 = pzx1 / np.sum(pzx1,axis=0,keepdims=True)
+	pzx2 = np.sum(pzx1x2,axis=1)
+	pzcx2 = pzx2 / np.sum(pzx2,axis=0,keepdims=True)
+	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2}
