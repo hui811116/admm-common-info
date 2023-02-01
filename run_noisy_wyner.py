@@ -8,6 +8,7 @@ import dataset as dt
 import datetime
 import copy
 import argparse
+import evaluation as ev
 
 
 parser = argparse.ArgumentParser()
@@ -58,7 +59,7 @@ algrun = alg.wynerDrs
 
 #nz_set = np.array([args.ny]) # FIXME: assume knowing the cardinality of 
 nz_set = np.arange(max(2,args.startz),args.endz+1,args.stepz)
-res_all = np.zeros((args.nrun*len(nz_set),10)) # nidx, niter, conv,nz, entz, mizx1,mizx2,joint_MI, loss, cmix1x2cz
+res_all = np.zeros((args.nrun*len(nz_set),10)) # nidx, niter, conv,nz, entz, mizx1,mizx2,joint_MI, dkl_error, cmix1x2cz
 rec_idx = 0
 for nz in nz_set:
 	for nn in range(args.nrun):
@@ -73,22 +74,23 @@ for nz in nz_set:
 		pzcx2 = out_dict["pzcx2"]
 		# compute the joint encoder
 		pzcx1x2 = out_dict['pzcx1x2'] # this might not be a valid prob, but is forced to be valid one
-
-		pzx1x2 = pzcx1x2 * prob_joint[None,:,:]
-		entzcx1x2 = -np.sum(pzx1x2*prob_joint[None,:,:] * np.log(pzcx1x2))
+		# only for wyner method
+		est_pzx1x2 = out_dict['est_pzx1x2']
+		pzx1x2 = est_pzx1x2
+		entzcx1x2 = np.sum(-pzx1x2 * np.log(pzcx1x2))
 		# take the maximum element
-		mizx1 = ut.calcMI(pzcx1 * px1[None,:])
-		mizx2 = ut.calcMI(pzcx2 * px2[None,:])
-		cmix1x2cz = ut.calcMIcond(np.transpose(pzcx1x2 * prob_joint[None,:,:],(1,2,0)))
+		mizx1 = ut.calcMI(np.sum(pzx1x2,axis=2))
+		mizx2 = ut.calcMI(np.sum(pzx1x2,axis=1))
+		cmix1x2cz = ut.calcMIcond(np.transpose(pzx1x2,(1,2,0)))
 		# loss calculation
 		joint_mi = entz - entzcx1x2
-		tmp_loss = joint_mi
-		tmp_result += [entz,mizx1,mizx2,joint_mi,tmp_loss,cmix1x2cz]
+		dkl_error = np.sum(prob_joint * (np.log(prob_joint)-np.log(np.sum(est_pzx1x2,axis=0))))
+		tmp_result += [entz,mizx1,mizx2,joint_mi,dkl_error,cmix1x2cz]
 			
 		res_all[rec_idx,:] = np.array(tmp_result)
-		print("nidx,{:},nz,{:},conv,{:},nit,{:},IX12_Z,{:.4f},HZ,{:.4f},loss,{:.5f},IX1_X2|Z,{:.5f}".format(
+		print("nidx,{:},nz,{:},conv,{:},nit,{:},IX12_Z,{:.4f},HZ,{:.4f},Error,{:.5f},IX1_X2|Z,{:.5f}".format(
 			nn,nz,int(out_dict["conv"]),out_dict["niter"],
-			joint_mi,entz,tmp_loss,cmix1x2cz))
+			joint_mi,entz,dkl_error,cmix1x2cz))
 		rec_idx += 1
 
 timenow= datetime.datetime.now()
