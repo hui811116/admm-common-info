@@ -47,7 +47,7 @@ prob_cond = data_dict["p_cond"]
 px1cx2 = prob_cond[0]
 px2cx1 = prob_cond[1]
 
-gamma_range = np.array([1])
+gamma_range = np.array([args.beta])
 
 alg_dict = {
 "penalty_coeff":args.penalty,
@@ -94,8 +94,8 @@ for nz in nz_set:
 		tmp_result += [entz,mizx1,mizx2,joint_mi,dkl_error,cmix1x2cz]
 			
 		res_all[rec_idx,:] = np.array(tmp_result)
-		print("nidx,{:},nz,{:},conv,{:},nit,{:},IX12_Z,{:.4f},HZ,{:.4f},Error,{:.5f},IX1_X2|Z,{:.5f}".format(
-			nn,nz,int(out_dict["conv"]),out_dict["niter"],
+		print("beta:{:.3f},nidx,{:},nz,{:},conv,{:},nit,{:},IX12_Z,{:.4f},HZ,{:.4f},Error,{:.5f},IX1_X2|Z,{:.5f}".format(
+			args.beta,nn,nz,int(out_dict["conv"]),out_dict["niter"],
 			joint_mi,entz,dkl_error,cmix1x2cz))
 		rec_idx += 1
 
@@ -112,6 +112,7 @@ while os.path.isfile(os.path.join(d_save_dir,safe_savename+".npy")):
 	repeat_cnt +=1
 	safe_savename = "{:}_{:}".format(safe_savename_base,repeat_cnt)
 
+print("saved at:{:}".format(os.path.join(d_save_dir,safe_savename+".npy")))
 # saving the results, numpy array
 with open(os.path.join(d_save_dir,safe_savename+".npy"),"wb") as fid:
 	np.save(fid,res_all)

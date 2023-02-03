@@ -16,7 +16,7 @@ with open(argv[1],"rb") as fid:
 filename = ".".join(argv[1].split(".")[:-1])
 with open(filename+"_config.pkl","rb") as fid:
 	pkl_config = pickle.load(fid)
-
+print(pkl_config)
 # OLD format
 # deterministic 
 # header
@@ -27,12 +27,19 @@ with open(filename+"_config.pkl","rb") as fid:
 # # gamma, nidx, niter, conv,nz, entz, mizx1,mizx2,cmizx1cx2, cmizx2cx1, loss, cmix1x2cz
 
 # NEW format
+# for other methods
 # header
 # # gamma, nidx, niter, conv,nz, entz, mizx1,mizx2,joint_mi, loss, cmix1x2cz
 header = ["gamma","nidx","niter",'conv','nz',"entz",'mizx1','mizx2','jointMI',"loss",'condMI']
+extracted_list = ['gamma','niter','conv','nz','entz','mizx1','mizx2','jointMI','condMI']
 # extract gamma,niter,nz,entz,mizx1,mizx2,joint_mi, cmix1x2cz
 # and put it into matlab array
-extracted_list = ['gamma','niter','conv','nz','entz','mizx1','mizx2','jointMI','condMI']
+# for wyner var form
+# nidx, niter, conv,nz, entz, mizx1,mizx2,joint_MI, dkl_error, cmix1x2cz
+if pkl_config['method'] == "wyner":
+	header = ["nidx",'niter','conv','nz','entz','mizx1','mizx2','jointMI','dklError','condMI']
+	extracted_list = ['niter','conv','nz','entz','mizx1','mizx2','jointMI','dklError','condMI']
+
 extract_result = []
 for idx in range(result_array.shape[0]):
 	tmp_list =[]

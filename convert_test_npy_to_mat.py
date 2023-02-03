@@ -19,11 +19,14 @@ with open(filename+"_config.pkl","rb") as fid:
 print(pkl_config)
 #print(result_array.shape)
 # NEW format
+# for representation form
 # header
 # gamma, nidx, niter, conv,nz, entz, mizx1,mizx2,joint_MI, cmix1x2cz, train_acc, test_acc
-header = ["gamma","nidx","niter",'conv','nz',"entz",'mizx1','mizx2','jointMI','condMI',"train_acc",'test_acc']
+# modified after 2023.02.03
+header = ["gamma","nidx","niter",'conv','nz',"entz",'mizx1','mizx2','jointMI','condMI','dkl_error',"train_acc",'test_acc']
 # and put it into matlab array
-extracted_list = ['gamma','niter','conv','nz','entz','mizx1','mizx2','jointMI','condMI',"train_acc",'test_acc']
+extracted_list = ['gamma','niter','conv','nz','entz','mizx1','mizx2','jointMI','condMI','dkl_error',"train_acc",'test_acc']
+# For variational form
 extract_result = []
 for idx in range(result_array.shape[0]):
 	tmp_list =[]
@@ -31,7 +34,6 @@ for idx in range(result_array.shape[0]):
 		tmp_list.append(result_array[idx,header.index(item)])
 	extract_result.append(tmp_list)
 extract_result = np.array(extract_result).astype("float64")
-#print(extract_result.shape)
 # reuse the filename
 # create converted mat file
 os.makedirs("converted_test_mat",exist_ok=True)

@@ -1004,7 +1004,9 @@ def detLogDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 def wynerDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	ss_fixed = kwargs['ss_init']
 	d_seed = None
-	penalty = kwargs['penalty_coeff']
+	#penalty = kwargs['penalty_coeff']
+	# no penalty coefficient for this method
+	# gamma is the beta in the paper
 	if kwargs.get("seed",False):
 		d_seed = kwargs['seed']
 	rng = np.random.default_rng(d_seed)
@@ -1061,16 +1063,8 @@ def wynerDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		# grad1
 		pzx1x2  = calcProdProb(log_px1cz,log_px2cz,nz)
 		grad_x1 = (1/nz) * np.exp(log_px1cz) * (1+log_px1cz) - np.sum(pzx1x2 * (const_logpx1x2[None,:,:]),axis=2).T
-		grad_x1 += penalty * np.sum(-px1x2[None,:,:] * pzcx1x2,axis=2).T
-		#grad_x1 += penalty * np.sum(pzx1x2 * (np.log(est_px1x2)-np.log(px1x2)+1)[None,:,:],axis=2).T
-		raw_log_px1cz = log_px1cz - grad_x1 * ss_fixed
-		# projection
-		max_x1 = np.amax(raw_log_px1cz,axis=0)
-		max_x1 = np.where(max_x1>0.0,max_x1,np.zeros((nz,)))
-		raw_log_px1cz -= max_x1[None,:]
-		raw_px1cz = np.exp(raw_log_px1cz) + 1e-9
-		raw_px1cz /= np.sum(raw_px1cz,axis=0,keepdims=True)
-		new_log_px1cz = np.log(raw_px1cz)
+		grad_x1 += gamma * np.sum(-px1x2[None,:,:] * pzcx1x2,axis=2).T
+		new_log_px1cz = gd.logProb2DProj(log_px1cz,grad_x1,ss_fixed)
 
 		# update
 		pzx1x2 = calcProdProb(new_log_px1cz,log_px2cz,nz)
@@ -1078,63 +1072,25 @@ def wynerDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		est_px1x2 = calcPx1x2(new_log_px1cz,log_px2cz,nz)
 		# gradient v2
 		grad_x2 = (1/nz) * np.exp(log_px2cz) * (1+log_px2cz) - np.sum(pzx1x2 * (const_logpx1x2[None,:,:]),axis=1).T
-		grad_x2 += penalty * np.sum(-px1x2[None,:,:]*pzcx1x2,axis=1).T
-		#grad_x2 = penalty * np.sum(pzx1x2 * (np.log(est_px1x2)-np.log(px1x2)+1)[None,:,:],axis=1).T
-		raw_log_px2cz = log_px2cz - grad_x2 * ss_fixed
-		# projection
-		max_x2 = np.amax(raw_log_px2cz,axis=0)
-		max_x2 = np.where(max_x2>0.0,max_x2,np.zeros((nz,)))
-		raw_log_px2cz -= max_x2[None,:]
-		raw_px2cz = np.exp(raw_log_px2cz) + 1e-9
-		raw_px2cz /= np.sum(raw_px2cz,axis=0,keepdims=True)
-		new_log_px2cz = np.log(raw_px2cz)
+		grad_x2 += gamma * np.sum(-px1x2[None,:,:]*pzcx1x2,axis=1).T
+
+		new_log_px2cz = gd.logProb2DProj(log_px2cz,grad_x2,ss_fixed)
 		# update
+		new_px1cz = np.exp(new_log_px1cz)
+		new_px2cz = np.exp(new_log_px2cz)
 		# dtv for the log likelihoods
-		dtv_px1cz = 0.5* np.sum(np.fabs(est_px1cz- raw_px1cz),axis=0)
-		dtv_px2cz = 0.5* np.sum(np.fabs(est_px2cz- raw_px2cz),axis=0)
+		dtv_px1cz = 0.5* np.sum(np.fabs(est_px1cz- new_px1cz),axis=0)
+		dtv_px2cz = 0.5* np.sum(np.fabs(est_px2cz- new_px2cz),axis=0)
 		dtv_error = calcDtvError(new_log_px1cz,new_log_px2cz,nz,px1x2)
-		#cond_mi = calcCondMi(new_log_px1cz,new_log_px2cz,nz)
 		# add relaxed condition
 		log_px1cz = new_log_px1cz
 		log_px2cz = new_log_px2cz
 		# debugging blocks
-		'''
-		if itcnt >0:
-			pzx1x2 = calcProdProb(new_log_px1cz,new_log_px2cz,nz)
-			print("current error={:.6f}".format(dtv_error))
-			print("px1cz")
-			print(np.exp(log_px1cz))
-			print("px2cz")
-			print(np.exp(log_px2cz))
-			print("est px1x2")
-			print(calcPx1x2(log_px1cz,log_px2cz,nz))
-			print("gradients")
-			print(grad_x1)
-			print(grad_x2)
-			print("grad_components")
-			print(np.sum(pzx1x2 * const_logpx1x2[None,:,:],axis=2).T)
-			print(np.sum(pzx1x2 * const_logpx1x2[None,:,:],axis=1).T)
-		'''
+		
 		if np.all(dtv_px1cz<convthres) and np.all(dtv_px2cz<convthres):
 			conv_flag = True
 			break
-		#if dtv_error < convthres:
-		#	conv_flag= True
-		#	break
-	'''
-	if not conv_flag:
-		dtv_error = calcDtvError(log_px1cz,log_px2cz,nz,px1x2)
-		print("tv error = {:.6f}".format(dtv_error))
-		#est_px1x2 = calcPx1x2(log_px1cz,log_px2cz,nz)
-		#print("px1cz")
-		#print(np.exp(log_px1cz))
-		#print("px2cz")
-		#print(np.exp(log_px2cz))
-		#print("est prob")
-		#print(est_px1x2)
-		#print("joint prob")
-		#print(px1x2)
-	'''
+		
 	# est pzx1x1
 	pzx1x2 = calcProdProb(log_px1cz,log_px2cz,nz)
 	pzcx1x2 = pzx1x2 / np.sum(pzx1x2,axis=0,keepdims=True)
@@ -1191,6 +1147,7 @@ def wynerDrsTrue(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	def calcCondMi(log_px1cz,log_px2cz,nz):
 		pzx1x2 = calcProdProb(log_px1cz,log_px2cz,nz)		
 		return ut.calcMIcond(np.transpose(pzx1x2,(1,2,0)))
+	'''
 	def logProb2DProj(log_p,pos_grad,ss_step):
 		epsilon = 1e-9
 		pdim = log_p.shape
@@ -1201,6 +1158,7 @@ def wynerDrsTrue(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		raw_p = np.exp(raw_logp) + epsilon # smoothness
 		raw_p /= np.sum(raw_p,axis=0,keepdims=True)
 		return np.log(raw_p)
+	'''
 	log_px1cz = np.log(px1cz)
 	log_px2cz = np.log(px2cz)
 	log_q1 = copy.deepcopy(log_px1cz)
@@ -1229,12 +1187,12 @@ def wynerDrsTrue(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 				+ np.sum(dual_2 * err_2) + 0.5 * penalty * np.linalg.norm(err_2)**2
 		# step 1
 		grad_p1 = (1/nz) * p_x1cz * (1+log_px1cz) + dual_1 + penalty * err_1
-		new_log_px1cz = logProb2DProj(log_px1cz,grad_p1,ss_fixed)
+		new_log_px1cz = gd.logProb2DProj(log_px1cz,grad_p1,ss_fixed)
 		# dual update
 		err_1 = new_log_px1cz - log_q1
 		dual_1 += penalty * err_1
 		grad_q1 = -gamma * np.sum(px1x2 * est_qzcx1x2,axis=2).T - dual_1 - penalty * err_1
-		new_log_q1 = logProb2DProj(log_q1,grad_q1,ss_fixed)
+		new_log_q1 = gd.logProb2DProj(log_q1,grad_q1,ss_fixed)
 
 		# update the kernel
 		est_qzx1x2 = calcProdProb(new_log_q1,log_q2,nz)
@@ -1243,12 +1201,12 @@ def wynerDrsTrue(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 
 		# step 2
 		grad_p2 = (1/nz) * p_x2cz * (1+log_px2cz) + dual_2 + penalty * err_2
-		new_log_px2cz = logProb2DProj(log_px2cz,grad_p2,ss_fixed)
+		new_log_px2cz = gd.logProb2DProj(log_px2cz,grad_p2,ss_fixed)
 		# dual update
 		err_2 = new_log_px2cz - log_q2
 		dual_2 += penalty * err_2
 		grad_q2 = -gamma * np.sum(px1x2 * est_qzcx1x2,axis=2).T - dual_2 - penalty * err_2
-		new_log_q2 = logProb2DProj(log_q2,grad_q2,ss_fixed)
+		new_log_q2 = gd.logProb2DProj(log_q2,grad_q2,ss_fixed)
 
 		#
 		err_1 = new_log_px1cz - new_log_q1
