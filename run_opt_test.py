@@ -55,8 +55,11 @@ px1cx2 = prob_joint/px2[None,:]
 px2cx1 = (prob_joint/px1[:,None]).T
 # TODO: what if |Z| neq |Y|
 nz = dataset_dict['ny']
+#nz = args.nz
 
 gamma_range = np.geomspace(args.gamma_min,args.gamma_max,num=args.gamma_num)
+if args.method == "wyner":
+	gamma_range = np.array([args.penalty])
 
 alg_dict = {
 "penalty_coeff":args.penalty,
@@ -74,13 +77,15 @@ elif args.method == 'detlogdrs':
 	algrun = alg.detLogDrs
 elif args.method == "wyner":
 	algrun = alg.wynerDrs
-	gamma_range = np.array([1.0]) # no gamma for wyner drs
+	gamma_range = np.array([args.penalty]) # no gamma for wyner drs
 	# or consider gamma as the beta lagrange multiplier?
 else:
 	sys.exit("undefined method {:}".format(args.method))
 nz_set = [nz]
-# gamma, nidx, niter, conv,nz, entz, mizx1,mizx2,joint_MI, cmix1x2cz, train_acc, test_acc
-res_all = np.zeros((len(gamma_range)*args.nrun*len(nz_set),12)) 
+# gamma, nidx, niter, conv,nz, entz, mizx1,mizx2,joint_MI, cmix1x2cz,kl_error, train_acc, test_acc
+# NEW format,
+# kl_error added
+res_all = np.zeros((len(gamma_range)*args.nrun*len(nz_set),13)) 
 rec_idx = 0
 for gidx ,gamma in enumerate(gamma_range):
 	for nz in nz_set:
@@ -91,7 +96,13 @@ for gidx ,gamma in enumerate(gamma_range):
 			# convergence reached... do things afterward
 			# compute the joint encoder
 			pzcx1x2 = out_dict['pzcx1x2'] # this might not be a valid prob, but is forced to be valid one
-			pzx1x2 = pzcx1x2 * prob_joint[None,:,:]
+			if args.method=="wyner":
+				pzx1x2 = out_dict['est_pzx1x2']
+				est_px1x2 = np.sum(pzx1x2,axis=0)
+				dkl_error = np.sum(prob_joint * (np.log(prob_joint)-np.log(est_px1x2)))
+			else:
+				pzx1x2 = pzcx1x2 * prob_joint[None,:,:]
+				dkl_error = 0
 			pz = np.sum(pzx1x2,axis=(1,2))
 			entz = np.sum(-pz*np.log(pz))
 			entzcx1x2 = np.sum(-pzx1x2*np.log(pzcx1x2))
@@ -104,16 +115,16 @@ for gidx ,gamma in enumerate(gamma_range):
 
 			mizx1 = ut.calcMI(pzcx1 * px1[None,:])
 			mizx2 = ut.calcMI(pzcx2 * px2[None,:])
-			cmix1x2cz = ut.calcMIcond(np.transpose(pzcx1x2 * prob_joint[None,:,:],(1,2,0)))
+			cmix1x2cz = ut.calcMIcond(np.transpose(pzx1x2,(1,2,0)))
 			# evaluation
 			train_acc, test_acc = ev.evalSamples2V(y_train,x_train,y_test,x_test,pzcx1x2)
 			# collecting results
-			tmp_result += [entz,mizx1,mizx2,joint_mi,cmix1x2cz,train_acc,test_acc]
+			tmp_result += [entz,mizx1,mizx2,joint_mi,cmix1x2cz,dkl_error,train_acc,test_acc]
 				
 			res_all[rec_idx,:] = np.array(tmp_result)
-			print("ga,{:.3f},nidx,{:},nz,{:},conv,{:},nit,{:},IX12_Z,{:.4f},HZ,{:.4f},IX1_2|Z,{:.5f},tr_acc,{:.4f},ts_acc,{:.4f}".format(
+			print("ga,{:.3f},nidx,{:},nz,{:},conv,{:},nit,{:},IX12_Z,{:.4f},HZ,{:.4f},IX1_2|Z,{:.5f},KL,{:.5f},tr_acc,{:.4f},ts_acc,{:.4f}".format(
 				gamma,nn,nz,int(out_dict["conv"]),out_dict["niter"],
-				joint_mi,entz,cmix1x2cz,train_acc,test_acc))
+				joint_mi,entz,cmix1x2cz,dkl_error,train_acc,test_acc))
 			rec_idx += 1
 
 timenow= datetime.datetime.now()
@@ -128,9 +139,6 @@ safe_savename = copy.copy(safe_savename_base)
 while os.path.isfile(os.path.join(d_save_dir,safe_savename+".npy")):
 	repeat_cnt +=1
 	safe_savename = "{:}_{:}".format(safe_savename_base,repeat_cnt)
-
-#print(safe_savename)
-#sys.exit()
 
 # saving the results, numpy array
 with open(os.path.join(d_save_dir,safe_savename+".npy"),"wb") as fid:

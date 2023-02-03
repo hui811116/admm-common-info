@@ -1144,3 +1144,131 @@ def wynerDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	pzx2 = np.sum(pzx1x2,axis=1)
 	pzcx2 = pzx2 / np.sum(pzx2,axis=0,keepdims=True)
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"est_pzx1x2":pzx1x2}
+
+
+def wynerDrsTrue(px1x2,nz,gamma,maxiter,convthres,**kwargs):
+	# truly DRS version of the vi solver
+	ss_fixed = kwargs['ss_init']
+	d_seed = None
+	penalty = kwargs['penalty_coeff']
+	if kwargs.get("seed",False):
+		d_seed = kwargs['seed']
+	rng = np.random.default_rng(d_seed)
+	(nx1,nx2) = px1x2.shape
+	px1 = np.sum(px1x2,1)
+	px2 = np.sum(px1x2,0)
+	px1cx2 = px1x2/px2[None,:]
+	px2cx1 = (px1x2/px1[:,None]).T
+	if "init_load" in kwargs.keys():
+		#pzcx1x2 = kwargs['pzcx1x2']
+		px1cz = kwargs['px1cz']
+		px2cz = kwargs['px2cz']
+	else:
+		px1cz = rng.random((nx1,nz))
+		px1cz /= np.sum(px1cz,axis=0,keepdims=True)
+		px2cz = rng.random((nx2,nz))
+		px2cz /= np.sum(px2cz,axis=0,keepdims=True)
+		# NOTE: Assume p(z) is uniformly distributed 
+		# initial pzcx1x2 is the softmax of the product px1cz, px2cz
+	def expandLogPxcz(log_pxxcz,adim,ndim):
+		# return dim (z,x1,x2)
+		return np.repeat(np.expand_dims(log_pxxcz.T,axis=adim),repeats=ndim,axis=adim)
+	def calcProdProb(log_px1cz,log_px2cz,nz):
+		expand_log_px1cz = expandLogPxcz(log_px1cz,adim=2,ndim=nx2)
+		expand_log_px2cz = expandLogPxcz(log_px2cz,adim=1,ndim=nx1)
+		return np.exp(expand_log_px1cz+expand_log_px2cz)/nz
+	def calcPx1x2(log_px1cz,log_px2cz,nz):
+		pzx1x2 = calcProdProb(log_px1cz,log_px2cz,nz)
+		return np.sum(pzx1x2,axis=0)
+	def calcDtvError(log_px1cz,log_px2cz,nz,px1x2):
+		pzx1x2 = calcProdProb(log_px1cz,log_px2cz,nz)
+		est_px1x2 = np.sum(pzx1x2,axis=0)
+		return 0.5 * np.sum(np.fabs(est_px1x2 - px1x2))
+	def calcProbSoftmax(log_px1cz,log_px2cz):
+		expand_log_px1cz = expandLogPxcz(log_px1cz,adim=2,ndim=nx2)
+		expand_log_px2cz = expandLogPxcz(log_px2cz,adim=1,ndim=nx1)
+		return softmax(expand_log_px1cz+expand_log_px2cz,axis=0)
+	def calcCondMi(log_px1cz,log_px2cz,nz):
+		pzx1x2 = calcProdProb(log_px1cz,log_px2cz,nz)		
+		return ut.calcMIcond(np.transpose(pzx1x2,(1,2,0)))
+	def logProb2DProj(log_p,pos_grad,ss_step):
+		epsilon = 1e-9
+		pdim = log_p.shape
+		raw_logp = log_p - ss_step * pos_grad
+		lpmax = np.amax(raw_logp,axis=0)
+		lpmax = np.where(lpmax>0,lpmax,np.zeros((pdim[-1])))
+		raw_logp -= lpmax[None,:]
+		raw_p = np.exp(raw_logp) + epsilon # smoothness
+		raw_p /= np.sum(raw_p,axis=0,keepdims=True)
+		return np.log(raw_p)
+	log_px1cz = np.log(px1cz)
+	log_px2cz = np.log(px2cz)
+	log_q1 = copy.deepcopy(log_px1cz)
+	log_q2 = copy.deepcopy(log_px2cz)
+	dual_1 = np.zeros((nx1,nz))
+	dual_2 = np.zeros((nx2,nz))
+	# helping constants
+	const_logpx1x2 = np.log(px1x2)
+	itcnt =0 
+	conv_flag = False
+	while itcnt < maxiter:
+		itcnt +=1
+		# total loss
+		p_x1cz = np.exp(log_px1cz)
+		p_x2cz = np.exp(log_px2cz)
+		#q_x1cz = np.exp(log_q1)
+		#q_x2cz = np.exp(log_q2)
+		est_qzx1x2 = calcProdProb(log_q1,log_q2,nz)
+		est_qx1x2 = np.sum(est_qzx1x2,axis=0)
+		est_qzcx1x2 = est_qzx1x2/np.sum(est_qzx1x2,axis=0,keepdims=True)
+		err_1 = log_px1cz - log_q1
+		err_2 = log_px2cz - log_q2
+		tloss = -np.sum(-p_x1cz/nz * log_px1cz) - np.sum(-px2cz/nz * log_px2cz) \
+				+gamma * np.sum(px1x2 * (const_logpx1x2 - np.log(est_qx1x2))) \
+				+ np.sum(dual_1 * err_1) + 0.5 * penalty * np.linalg.norm(err_1)**2\
+				+ np.sum(dual_2 * err_2) + 0.5 * penalty * np.linalg.norm(err_2)**2
+		# step 1
+		grad_p1 = (1/nz) * p_x1cz * (1+log_px1cz) + dual_1 + penalty * err_1
+		new_log_px1cz = logProb2DProj(log_px1cz,grad_p1,ss_fixed)
+		# dual update
+		err_1 = new_log_px1cz - log_q1
+		dual_1 += penalty * err_1
+		grad_q1 = -gamma * np.sum(px1x2 * est_qzcx1x2,axis=2).T - dual_1 - penalty * err_1
+		new_log_q1 = logProb2DProj(log_q1,grad_q1,ss_fixed)
+
+		# update the kernel
+		est_qzx1x2 = calcProdProb(new_log_q1,log_q2,nz)
+		est_qx1x2 = np.sum(est_qzx1x2,axis=0)
+		est_qzcx1x2 = est_qzx1x2/np.sum(est_qzx1x2,axis=0,keepdims=True)
+
+		# step 2
+		grad_p2 = (1/nz) * p_x2cz * (1+log_px2cz) + dual_2 + penalty * err_2
+		new_log_px2cz = logProb2DProj(log_px2cz,grad_p2,ss_fixed)
+		# dual update
+		err_2 = new_log_px2cz - log_q2
+		dual_2 += penalty * err_2
+		grad_q2 = -gamma * np.sum(px1x2 * est_qzcx1x2,axis=2).T - dual_2 - penalty * err_2
+		new_log_q2 = logProb2DProj(log_q2,grad_q2,ss_fixed)
+
+		#
+		err_1 = new_log_px1cz - new_log_q1
+		err_2 = new_log_px2cz - new_log_q2
+		dtv_1 = 0.5 * np.sum(np.fabs(err_1),axis=0)
+		dtv_2 = 0.5 * np.sum(np.fabs(err_2),axis=0)
+		log_px1cz = new_log_px1cz
+		log_px2cz = new_log_px2cz
+		log_q1 = new_log_q1
+		log_q2 = new_log_q2
+		if np.all(dtv_1<convthres) and np.all(dtv_2 < convthres):
+			conv_flag = True 
+			break
+	# est pzx1x1
+	pzx1x2 = calcProdProb(log_q1,log_q2,nz)
+	pzcx1x2 = pzx1x2 / np.sum(pzx1x2,axis=0,keepdims=True)
+	pz = np.sum(pzx1x2,axis=(1,2))
+	pzx1 = np.sum(pzx1x2,axis=2)
+	pzcx1 = pzx1 / np.sum(pzx1,axis=0,keepdims=True)
+	pzx2 = np.sum(pzx1x2,axis=1)
+	pzcx2 = pzx2 / np.sum(pzx2,axis=0,keepdims=True)
+	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"est_pzx1x2":pzx1x2}
+

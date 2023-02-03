@@ -12,7 +12,7 @@ import evaluation as ev
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("method",choices=["wyner"])
+parser.add_argument("method",choices=["wyner",'wlogdrs'])
 parser.add_argument("--penalty",type=float,default=128.0,help="penalty coefficient of the ADMM solver")
 parser.add_argument("--maxiter",type=int,default=50000,help="maximum iteration before termination")
 parser.add_argument("--convthres",type=float,default=1e-6,help="convergence threshold")
@@ -27,6 +27,7 @@ parser.add_argument("--corr",type=float,default=0,help="cyclic observation uncer
 parser.add_argument("--startz",type=int,default=2,help="starting number of nz search")
 parser.add_argument("--endz",type=int,default=4,help="ending number of nz search")
 parser.add_argument("--stepz",type=int,default=1,help="stepsize of nz search")
+parser.add_argument('--beta',type=float,default=8.0,help="KL divergence trade-off parameter")
 
 args = parser.parse_args()
 argsdict = vars(args)
@@ -55,7 +56,12 @@ alg_dict = {
 "seed":args.seed,
 }
 
-algrun = alg.wynerDrs
+if args.method=="wyner":
+	algrun = alg.wynerDrs
+elif args.method == "wlogdrs":
+	algrun = alg.wynerDrsTrue
+else:
+	sys.exit("undefined method {:}".format(args.method))
 
 #nz_set = np.array([args.ny]) # FIXME: assume knowing the cardinality of 
 nz_set = np.arange(max(2,args.startz),args.endz+1,args.stepz)
@@ -63,7 +69,7 @@ res_all = np.zeros((args.nrun*len(nz_set),10)) # nidx, niter, conv,nz, entz, miz
 rec_idx = 0
 for nz in nz_set:
 	for nn in range(args.nrun):
-		out_dict = algrun(prob_joint,nz,1.0,args.maxiter,args.convthres,**alg_dict)
+		out_dict = algrun(prob_joint,nz,args.beta,args.maxiter,args.convthres,**alg_dict)
 		tmp_result = [nn,out_dict['niter'],int(out_dict["conv"]),nz]
 		# convergence reached... do things afterward
 		# calculate the mutual informations
