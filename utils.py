@@ -1,6 +1,7 @@
 import numpy as np
 import sys
 import os
+from scipy.special import softmax
 
 def calcMI(pxy):
 	return np.sum(pxy * np.log(pxy/np.sum(pxy,0,keepdims=True)/np.sum(pxy,1,keepdims=True)))
@@ -60,3 +61,25 @@ def computeJointEnc(pz,pzcx1,pzcx2,px12):
 				joint_enc[iz,id1,id2] = pz[iz] * px1[id1] * px2[id2] / px12[id1,id2] * pzcx1[iz,id1] * pzcx2[iz,id2] / est_pz_x1[iz] / est_pz_x2[iz]
 	joint_enc /= np.sum(joint_enc,axis=0,keepdims=True)
 	return joint_enc
+
+def expandLogPxcz(log_pxxcz,adim,ndim):
+	# return dim (z,x1,x2)
+	return np.repeat(np.expand_dims(log_pxxcz.T,axis=adim),repeats=ndim,axis=adim)
+def calcProdProb(log_px1cz,log_px2cz,nz):
+	expand_log_px1cz = expandLogPxcz(log_px1cz,adim=2,ndim=nx2)
+	expand_log_px2cz = expandLogPxcz(log_px2cz,adim=1,ndim=nx1)
+	return np.exp(expand_log_px1cz+expand_log_px2cz)/nz
+def calcPx1x2(log_px1cz,log_px2cz,nz):
+	pzx1x2 = calcProdProb(log_px1cz,log_px2cz,nz)
+	return np.sum(pzx1x2,axis=0)
+def calcDtvError(log_px1cz,log_px2cz,nz,px1x2):
+	pzx1x2 = calcProdProb(log_px1cz,log_px2cz,nz)
+	est_px1x2 = np.sum(pzx1x2,axis=0)
+	return 0.5 * np.sum(np.fabs(est_px1x2 - px1x2))
+def calcProbSoftmax(log_px1cz,log_px2cz):
+	expand_log_px1cz = expandLogPxcz(log_px1cz,adim=2,ndim=nx2)
+	expand_log_px2cz = expandLogPxcz(log_px2cz,adim=1,ndim=nx1)
+	return softmax(expand_log_px1cz+expand_log_px2cz,axis=0)
+def calcCondMi(log_px1cz,log_px2cz,nz):
+	pzx1x2 = calcProdProb(log_px1cz,log_px2cz,nz)		
+	return ut.calcMIcond(np.transpose(pzx1x2,(1,2,0)))

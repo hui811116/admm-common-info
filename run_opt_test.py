@@ -77,7 +77,7 @@ elif args.method == 'detlogdrs':
 	algrun = alg.detLogDrs
 elif args.method == "wyner":
 	algrun = alg.wynerDrs
-	gamma_range = np.array([args.penalty]) # no gamma for wyner drs
+	gamma_range = np.array([args.penalty]) # no penalty coefficient for wyner drs
 	# or consider gamma as the beta lagrange multiplier?
 else:
 	sys.exit("undefined method {:}".format(args.method))
