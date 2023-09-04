@@ -12,7 +12,7 @@ import evaluation as ev
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("method",choices=["wyner",'wlogdrs'])
+parser.add_argument("method",choices=["wyner",'wlogdrs','wynerdca'])
 parser.add_argument("--penalty",type=float,default=128.0,help="penalty coefficient of the ADMM solver")
 parser.add_argument("--maxiter",type=int,default=50000,help="maximum iteration before termination")
 parser.add_argument("--convthres",type=float,default=1e-6,help="convergence threshold")
@@ -60,6 +60,8 @@ if args.method=="wyner":
 	algrun = alg.wynerDrs
 elif args.method == "wlogdrs":
 	algrun = alg.wynerDrsTrue
+elif args.method == "wynerdca":
+	algrun = alg.wynerDCA
 else:
 	sys.exit("undefined method {:}".format(args.method))
 
@@ -106,7 +108,7 @@ d_save_dir = os.path.join(d_cwd,args.output_dir)
 os.makedirs(d_save_dir,exist_ok=True)
 
 repeat_cnt = 0
-safe_savename_base = "sto_wyner_y{:}b{:}_cr{:.4f}_c{:}_si{:.4e}_nzall_{:}".format(args.ny,args.nb,args.corr,args.penalty,args.ss_init,timenow.strftime("%Y%m%d"))
+safe_savename_base = "sto_{:}_y{:}b{:}_cr{:.4f}_c{:}_si{:.4e}_nzall_{:}".format(args.method,args.ny,args.nb,args.corr,args.penalty,args.ss_init,timenow.strftime("%Y%m%d"))
 safe_savename = copy.copy(safe_savename_base)
 while os.path.isfile(os.path.join(d_save_dir,safe_savename+".npy")):
 	repeat_cnt +=1

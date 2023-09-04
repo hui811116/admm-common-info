@@ -1,7 +1,7 @@
 import numpy as np
 import sys
 import os
-import tensorflow as tf
+#import tensorflow as tf
 
 def naiveStepSize(prob,update,ss_init,ss_scale):
 	ssout = ss_init
@@ -11,6 +11,7 @@ def naiveStepSize(prob,update,ss_init,ss_scale):
 			return 0
 	return ssout
 
+'''
 def tfNaiveSS(tfprob,update,init_step,scale):
 	stepsize = init_step
 	while tf.reduce_any(tfprob+update * stepsize<=0.0 ) or tf.reduce_any(tfprob+update*stepsize>=1.0):
@@ -19,7 +20,7 @@ def tfNaiveSS(tfprob,update,init_step,scale):
 			stepsize = 0
 			break
 	return stepsize
-
+'''
 # project to log probability so the range is R-
 def logProb2DProj(log_p,grad_p,ss_step):
 	epsilon = 1e-9 # smoothness coefficient 

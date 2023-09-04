@@ -1116,3 +1116,66 @@ def wynerDrsTrue(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	pzcx2 = pzx2 / np.sum(pzx2,axis=0,keepdims=True)
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"est_pzx1x2":pzx1x2}
 
+
+# difference of convex approach
+
+def wynerDCA(px1x2,nz,gamma,maxiter,convthres,**kwargs):
+	d_seed = None
+	if kwargs.get("seed",False):
+		d_seed = kwargs['seed']
+	rng = np.random.default_rng(d_seed)
+	(nx1,nx2) = px1x2.shape
+	px1 = np.sum(px1x2,1)
+	px2 = np.sum(px1x2,0)
+	px1cx2 = px1x2/px2[None,:]
+	px2cx1 = (px1x2/px1[:,None]).T
+	if "init_load" in kwargs.keys():
+		pzcx1x2 = kwargs['pzcx1x2']
+	else:
+		pzcx1x2 = rng.random((nz,nx1,nx2))
+		pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
+	# helper
+	def expandLogPxcz(log_pxxcz,adim,ndim):
+		# return dim (z,x1,x2)
+		return np.repeat(np.expand_dims(log_pxxcz.T,axis=adim),repeats=ndim,axis=adim)
+	def calcProbSoftmax(log_px1cz,log_px2cz,log_pz,gamma):
+		expand_log_px1cz = expandLogPxcz(log_px1cz,adim=2,ndim=nx2)
+		expand_log_px2cz = expandLogPxcz(log_px2cz,adim=1,ndim=nx1)
+		exponent = gamma * (expand_log_px1cz+expand_log_px2cz) + log_pz[:,None,None]
+		#exponent = (expand_log_px1cz+expand_log_px2cz) + log_pz[:,None,None]
+		#exp_2 = (expand_log_px1cz+expand_log_px2cz) + (1/gamma) * log_pz[:,None,None]
+		#exponent -= np.amax(exponent,axis=0)[None,:,:]
+		#if np.amax(exponent) > np.amax(exp_2):
+		#	return softmax( exponent, axis=0)
+		#else:
+		#	return softmax( exp_2,axis=0)
+		return softmax(exponent - np.amax(exponent,axis=0),axis=0)
+	#mask_pzcx1x2 = np.ones(pzcx1x2.shape)
+	itcnt =0 
+	conv_flag = False
+	while itcnt<maxiter:
+		itcnt+=1
+		# compute logp(z|x1),logp(z|x2)
+		pz = np.sum(pzcx1x2*px1x2[None,:,:],axis=(1,2))
+		pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
+		pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
+		
+		log_pz = np.log(pz+1e-8)
+		log_px1cz = np.log((pzcx1 * px1[None,:]/pz[:,None]).T+1e-8)
+		log_px2cz = np.log((pzcx2 * px2[None,:]/pz[:,None]).T+1e-8)
+
+		new_pzcx1x2 = calcProbSoftmax(log_px1cz,log_px2cz,log_pz,gamma)
+		dtv_vec = 0.5 * np.sum(np.fabs(new_pzcx1x2-pzcx1x2),axis=0)
+		if np.all(dtv_vec < convthres):
+			conv_flag = True
+			break
+		else:
+			pzcx1x2 = new_pzcx1x2
+	pzx1x2 = pzcx1x2 * px1x2[None,:,:]
+	#pzcx1x2 = pzx1x2 / np.sum(pzx1x2,axis=0,keepdims=True)
+	pz = np.sum(pzx1x2,axis=(1,2))
+	pzx1 = np.sum(pzx1x2,axis=2)
+	pzcx1 = pzx1 / np.sum(pzx1,axis=0,keepdims=True)
+	pzx2 = np.sum(pzx1x2,axis=1)
+	pzcx2 = pzx2 / np.sum(pzx2,axis=0,keepdims=True)
+	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"est_pzx1x2":pzx1x2}

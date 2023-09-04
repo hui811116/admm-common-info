@@ -3,14 +3,18 @@ import sys
 import os
 from scipy.special import softmax
 
+def calcKL(px,py):
+	assert px.shape == py.shape
+	return np.sum(px * np.log(px/py))
+
 def calcMI(pxy):
 	return np.sum(pxy * np.log(pxy/np.sum(pxy,0,keepdims=True)/np.sum(pxy,1,keepdims=True)))
 
 def calcMIcond(pxyz):
 	pz = np.sum(pxyz,axis=(0,1),keepdims=True)
-	pxycz = pxyz/pz
-	pxcz = np.sum(pxycz,axis=1,keepdims=True)
-	pycz = np.sum(pxycz,axis=0,keepdims=True)
+	pxycz = pxyz/pz[None,None,:]
+	pxcz = np.sum(pxyz,axis=1)/pz[None,:]
+	pycz = np.sum(pxyz,axis=0)/pz[None,:]
 	return max(np.sum(pxyz * (np.log(pxycz) - np.log(pycz) - np.log(pxcz)) ),0)
 
 def calcEnt(pz):
@@ -83,3 +87,19 @@ def calcProbSoftmax(log_px1cz,log_px2cz):
 def calcCondMi(log_px1cz,log_px2cz,nz):
 	pzx1x2 = calcProdProb(log_px1cz,log_px2cz,nz)		
 	return ut.calcMIcond(np.transpose(pzx1x2,(1,2,0)))
+
+def computeGlobalSolution(px1cy,px2cy,py):
+	smooth_eps = 1e-9
+	nx1 = px1cy.shape[0]
+	nx2 = px2cy.shape[0]
+	ny = py.shape[0]
+	px1x2y = np.zeros((nx1,nx2,ny))
+	for yy in range(ny):
+		for xx1 in range(nx1):
+			for xx2 in range(nx2):
+				px1x2y[xx1,xx2,yy] = py[yy] * px1cy[xx1,yy] * px2cy[xx2,yy] + smooth_eps
+	px1x2y /= np.sum(px1x2y)
+
+	pycx1x2 = np.transpose(px1x2y,axes=(2,0,1)) # this is pyx1x2 actually
+	pycx1x2 /= np.sum(pycx1x2,axis=0,keepdims=True)
+	return pycx1x2

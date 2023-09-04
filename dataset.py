@@ -206,7 +206,7 @@ def synExpandToy(ny,nb,corr):
 	px2 = np.sum(px1x2,axis=0)
 	px1cx2 = px1x2/px2[None,:]
 	px2cx1 = px1x2.T/px1[None,:]
-	return {"p_joint":px1x2,"px_list":[px1,px2],"p_cond":[px1cx2,px2cx1],"pycx_list":[px1cy,px2cy],"py":py}
+	return {"p_joint":px1x2,"px_list":[px1,px2],"p_cond":[px1cx2,px2cx1],"pxcy_list":[px1cy,px2cy],"py":py}
 
 def synExpandToyNonUnif(ny,nb,corr):
 	raw_eps = 1e-9

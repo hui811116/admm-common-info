@@ -10,29 +10,29 @@ import copy
 import argparse
 import evaluation as ev
 import hessian as hs
+from scipy.io import savemat
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("method",choices=["wyner",'wynerdca'])
+# TODO: should include other solvers and their hyper parameters
+# For example: step-size of gradients, penalty coefficients
+parser.add_argument("method",choices=["wyner",'wynerdca',"logdrsvar"])
 parser.add_argument("--maxiter",type=int,default=50000,help="maximum iteration before termination")
 parser.add_argument("--convthres",type=float,default=1e-6,help="convergence threshold")
 parser.add_argument("--nrun",type=int,default=10,help="number of trail of each simulation")
 parser.add_argument("--ss_init",type=float,default=1e-1,help="step size initialization")
 parser.add_argument("--ss_scale",type=float,default=0.25,help="step size scaling")
-parser.add_argument("--output_dir",type=str,default="wyner_com_results",help="output filename")
+parser.add_argument("--penalty",type=float,default=128.0,help="penalty coefficient for ADMM-based solvers")
 parser.add_argument("--seed",type=int,default=None,help="random seed for reproduction")
 parser.add_argument("--ny",type=int,default=2,help="number of uniform hidden labels")
 parser.add_argument("--nb",type=int,default=2,help="number of blocks for observations")
 parser.add_argument("--corr",type=float,default=0,help="cyclic observation uncertainty given a label")
-#parser.add_argument("--startz",type=int,default=2,help="starting number of nz search")
-#parser.add_argument("--endz",type=int,default=4,help="ending number of nz search")
-#parser.add_argument("--stepz",type=int,default=1,help="stepsize of nz search")
-#parser.add_argument('--beta',type=float,default=8.0,help="KL divergence trade-off parameter")
+
 parser.add_argument("--betamin",type=float,default=0.1,help="minimum trade-off parameter for search")
 parser.add_argument("--betamax",type=float,default=2.5,help="maximum trade-off parameter for search")
 parser.add_argument("--numbeta",type=int,default=20,help="number of search points")
 
-
+parser.add_argument("--savedir",type=str,default="exp_global_test",help="save directory")
 args = parser.parse_args()
 argsdict = vars(args)
 
@@ -51,23 +51,40 @@ prob_cond = data_dict["p_cond"]
 px1cx2 = prob_cond[0]
 px2cx1 = prob_cond[1]
 
+# get the global solution 
+global_pycx1x2 = ut.computeGlobalSolution(
+	data_dict['pxcy_list'][0],
+	data_dict['pxcy_list'][1],
+	data_dict['py'])
+#print(global_pycx1x2)
+#sys.exit()
+
 gamma_range = np.geomspace(args.betamin,args.betamax,num=args.numbeta)
 
 alg_dict = {
 "ss_init":args.ss_init,
 "ss_scale":args.ss_scale,
 "seed":args.seed,
+"penalty":args.penalty,
 }
 
 if args.method=="wyner":
 	algrun = alg.wynerDrs
 elif args.method == "wynerdca":
 	algrun = alg.wynerDCA
+elif args.method == "logdrsvar":
+	algrun = alg.stoLogDrsVar
 else:
 	sys.exit("undefined method {:}".format(args.method))
 
+
 nz_set = np.array([args.ny]) # FIXME: assume knowing the cardinality of 
+
+hdr_tex = "nz_beta_conv_sgblDtv_niter_I12_I1_I2_IC_KLerr"
+record_arr = np.zeros((len(gamma_range)*len(nz_set)*args.nrun,10))
+
 #nz_set = np.arange(max(2,args.startz),args.endz+1,args.stepz)
+ridx =0
 for beta in gamma_range:
 	for nz in nz_set:
 		for nn in range(args.nrun):
@@ -76,6 +93,12 @@ for beta in gamma_range:
 			pz = out_dict["pz"]
 			entz = ut.calcEnt(pz)
 			pzcx1x2 = out_dict['pzcx1x2'] # this might not be a valid prob, but is forced to be valid one
+
+			# total variation distance to the global solution
+			# NOTE: there is a label matching problem that needs to be solved
+			corrected_pzcx1x2,global_dtv = ev.compare_global_solution(global_pycx1x2,pzcx1x2)
+			sum_global_dtv = np.sum(prob_joint*global_dtv) # expected DTV
+
 			est_pzx1x2 = out_dict['est_pzx1x2']
 			pzx1x2 = est_pzx1x2
 			# KL distance
@@ -90,19 +113,51 @@ for beta in gamma_range:
 			# loss calculation
 			joint_mi = entz - entzcx1x2
 			tmp_loss = joint_mi - beta * (mizx1 + mizx2) # for recording
-			eigvals = hs.computeHessian_2views(pzcx1x2,prob_joint)
-			eig_v2 = eigvals[:,-2]
-			eig_tex = ",".join(["{:.4e}".format(item) for item in eig_v2])
-			print("nz,{:},beta,{:>6.3f},conv,{:},niter,{:>4},I12,{:.4e},I1,{:.4e},I2,{:.4e},IX1X2cZ,{:.5e},Dkl_x12,{:.4e},{:}".format(
-					nz,
+			# SECOND ORDER ANALYSIS
+			#eigvals = hs.computeHessian_2views(pzcx1x2,prob_joint)
+			#eig_v2 = eigvals[:,-2]
+			#eig_tex = ",".join(["{:.4e}".format(item) for item in eig_v2])
+			# COMPUTE the distance to the global solution
+
+			print("beta,{:>6.3f},conv,{:},global,{:.4e},niter,{:>4},I12,{:.4e},IX1X2cZ,{:.5e},Dkl_x12,{:.4e}".format(
 					beta,
 					out_dict['conv'],
+					sum_global_dtv,
 					out_dict['niter'],
 					joint_mi,
-					mizx1,
-					mizx2,
 					cmix1x2cz,
 					dkl_error,
-					eig_tex
+					#eig_tex
 				))
+			# record the results
+			record_arr[ridx,:] = np.array([
+				nz,
+				beta,
+				int(out_dict['conv']),
+				sum_global_dtv,
+				out_dict['niter'],
+				joint_mi,
+				mizx1,
+				mizx2,
+				cmix1x2cz,
+				dkl_error,])
+			ridx+=1
 
+d_save_dir = os.path.join(os.getcwd(),args.savedir)
+os.makedirs(d_save_dir,exist_ok=True)
+
+tnow = datetime.datetime.now()
+repeat_cnt = 0
+safe_savename_base = "globalTest_{:}_y{:}b{:}_cr{:.4f}_{:}".format(args.method,args.ny,args.nb,args.corr,tnow.strftime("%Y%m%d"))
+safe_savename = copy.copy(safe_savename_base)
+while os.path.isfile(os.path.join(d_save_dir,safe_savename)+".mat"):
+	repeat_cnt+=1
+	safe_savename = "{:}_{:}".format(safe_savename_base,repeat_cnt)
+
+with open(os.path.join(d_save_dir,safe_savename+"_config.pkl"),'wb') as fid:
+	pickle.dump(argsdict,fid)
+with open(os.path.join(d_save_dir,safe_savename+".npy"),'wb') as fid:
+	np.save(fid,record_arr)
+savemat(os.path.join(d_save_dir,safe_savename+".mat"),{"label":hdr_tex,"result_array":record_arr})
+
+print("Save the results to:{:}".format(os.path.join(d_save_dir,safe_savename+".mat")))
