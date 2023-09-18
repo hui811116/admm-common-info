@@ -3,9 +3,7 @@ import sys
 import os
 import gradient_descent as gd
 import utils as ut
-#import tensorflow as tf
 import copy
-#import scipy as sp
 from scipy.special import softmax
 
 def admmHighDim(px1x2,nz,gamma,maxiter,convthres,**kwargs):
@@ -45,9 +43,6 @@ def admmHighDim(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		dual_x1= np.zeros(pzcx1.shape)
 		dual_x2= np.zeros(pzcx2.shape)
 	# gradient masking
-	#mask_pzcx1 = np.ones(pzcx1.shape)
-	#mask_pzcx2 = np.ones(pzcx2.shape)
-	#mask_pzcx1x2 = np.ones(pzcx1x2.shape)
 	itcnt = 0
 	conv_flag= False
 	while itcnt < maxiter:
@@ -199,126 +194,6 @@ def stoGdDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
 	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"q_prob":q_prob,"dual_p":dual_p,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2}
 
-'''
-def stoLogAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
-	#ss_init = kwargs['ss_init']
-	#ss_scale= kwargs['ss_scale']
-	ss_fixed = kwargs['ss_init']
-	penalty = kwargs['penalty_coeff']
-	d_seed = None
-	if kwargs.get("seed",False):
-		d_seed = kwargs["seed"]
-	rng = np.random.default_rng(d_seed)
-	(nx1,nx2) = px1x2.shape
-	px1 = np.sum(px1x2,1)
-	px2 = np.sum(px1x2,0)
-	px1cx2 = px1x2 /px2[None,:]
-	px2cx1 = (px1x2/ px1[:,None]).T
-
-	if "init_load" in kwargs.keys():
-		pzcx1x2 = kwargs["pzcx1x2"]
-		pz = kwargs["pz"]
-		pzcx1 = kwargs["pzcx1"]
-		pzcx2 = kwargs["pzcx2"]
-		dual_z = kwargs["dual_z"]
-		dual_x1 = kwargs["dual_x1"]
-		dual_x2 = kwargs["dual_x2"]
-	else:
-		# random initialization
-		pzcx1x2 = rng.random((nz,nx1,nx2))
-		pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
-
-		# augmented variables
-		pz = np.sum(pzcx1x2 * px1x2[None,...],axis=(1,2))
-		pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,...],axis=2)
-		pzcx2 = np.sum(pzcx1x2 * px1cx2[None,...],axis=1)
-
-		# dual vars
-		dual_z = np.zeros(pz.shape)
-		dual_x1= np.zeros(pzcx1.shape)
-		dual_x2= np.zeros(pzcx2.shape)
-	# variables
-	mlog_pzcx1x2= -np.log(pzcx1x2)
-	mlog_pz = -np.log(pz)
-	mlog_pzcx1 = -np.log(pzcx1)
-	mlog_pzcx2 = -np.log(pzcx2)
-
-	conv_flag = False
-	itcnt = 0
-	while itcnt < maxiter:
-		itcnt +=1 
-		# precomputing the error
-		exp_mlog_pzcx1x2 = np.exp(-mlog_pzcx1x2)
-		exp_mlog_pz = np.exp(-mlog_pz)
-		exp_mlog_pzcx1 = np.exp(-mlog_pzcx1)
-		exp_mlog_pzcx2 = np.exp(-mlog_pzcx2)
-		est_pz = np.sum(exp_mlog_pzcx1x2 * px1x2[None,...],axis=(1,2))
-		est_pzcx1 = np.sum(exp_mlog_pzcx1x2 * (px2cx1.T)[None,...],axis=2)
-		est_pzcx2 = np.sum(exp_mlog_pzcx1x2 * px1cx2[None,...],axis=1)
-		err_z = -np.log(est_pz) - mlog_pz
-		err_x1 = -np.log(est_pzcx1) - mlog_pzcx1
-		err_x2 = -np.log(est_pzcx2) - mlog_pzcx2
-		# gradient of pzcx1x2
-		grad_p = -(gamma+1)*exp_mlog_pzcx1x2*((1-mlog_pzcx1x2)*px1x2[None,...]) + \
-				(exp_mlog_pzcx1x2 *px1x2[None,...])* np.repeat( np.expand_dims(np.repeat(((dual_z+penalty*err_z)/est_pz)[:,None],repeats=nx1,axis=1),axis=-1),repeats=nx2,axis=-1) +\
-				(exp_mlog_pzcx1x2 *(px2cx1.T)[None,...]) * np.repeat( np.expand_dims((dual_x1+penalty*err_x1)/est_pzcx1,axis=-1),repeats=nx2,axis=-1) + \
-				(exp_mlog_pzcx1x2 *px1cx2[None,...]) * np.repeat(np.expand_dims((dual_x2+penalty*err_x2)/est_pzcx2,axis=1),repeats=nx1,axis=1)
-		raw_mlog_pzcx1x2 = mlog_pzcx1x2 - ss_fixed * grad_p
-		raw_mlog_pzcx1x2 -= np.amin(raw_mlog_pzcx1x2,axis=0)
-		raw_pzcx1x2 = np.exp(-raw_mlog_pzcx1x2) + 1e-9
-		new_mlog_pzcx1x2 =-np.log(raw_pzcx1x2 / np.sum(raw_pzcx1x2,axis=0,keepdims=True))
-
-		# update estimates
-		exp_mlog_pzcx1x2 = np.exp(-new_mlog_pzcx1x2)
-		est_pz = np.sum(exp_mlog_pzcx1x2*px1x2[None,...],axis=(1,2))
-		est_pzcx1 = np.sum(exp_mlog_pzcx1x2*(px2cx1.T)[None,...],axis=2)
-		est_pzcx2 = np.sum(exp_mlog_pzcx1x2*px1cx2[None,...],axis=1)
-		err_z = -np.log(est_pz) - mlog_pz
-		err_x1 = -np.log(est_pzcx1) - mlog_pzcx1
-		err_x2 = -np.log(est_pzcx2) - mlog_pzcx2
-
-		#dual updates
-		dual_z += penalty * err_z 
-		dual_x1 += penalty * err_x1
-		dual_x2 += penalty* err_x2
-		# grad_z
-		grad_z = (1-gamma)*exp_mlog_pz *(1-mlog_pz) - (dual_z+penalty*err_z)
-		raw_mlog_pz = mlog_pz - ss_fixed * grad_z
-		raw_mlog_pz -= np.amin(raw_mlog_pz)
-		raw_pz = np.exp(-raw_mlog_pz) + 1e-9
-		new_mlog_pz = -np.log(raw_pz/np.sum(raw_pz,keepdims=True))
-		# grad_x1
-		grad_x1 = gamma * exp_mlog_pzcx1 * (1-mlog_pzcx1) - (dual_x1 + penalty*err_x1)
-		raw_mlog_pzcx1 = mlog_pzcx1 - ss_fixed * grad_x1
-		raw_mlog_pzcx1 -= np.amin(raw_mlog_pzcx1,axis=0)
-		raw_pzcx1 = np.exp(-raw_mlog_pzcx1) + 1e-9
-		new_mlog_pzcx1 = -np.log(raw_pzcx1/np.sum(raw_pzcx1,axis=0,keepdims=True))
-		# grad_x2
-		grad_x2 = gamma * exp_mlog_pzcx2 * (1-mlog_pzcx2) - (dual_x2 + penalty * err_x2)
-		raw_mlog_pzcx2 = mlog_pzcx2 - ss_fixed * grad_x2
-		raw_mlog_pzcx2 -= np.amin(raw_mlog_pzcx2,axis=0)
-		raw_pzcx2 = np.exp(-raw_mlog_pzcx2) + 1e-9
-		new_mlog_pzcx2 = -np.log(raw_pzcx2/np.sum(raw_pzcx2,axis=0,keepdims=True))
-
-		# convergence
-		conv_z = 0.5 * np.sum(np.fabs(est_pz - np.exp(-new_mlog_pz)))
-		conv_x1 = 0.5 * np.sum(np.fabs(est_pzcx1 - np.exp(-new_mlog_pzcx1)),axis=0)
-		conv_x2 = 0.5 * np.sum(np.fabs(est_pzcx2 - np.exp(-new_mlog_pzcx2)),axis=0)
-		if conv_z < convthres and np.all(conv_x1<convthres) and np.all(conv_x2<convthres):
-			conv_flag = True
-			break
-		else:
-			mlog_pzcx1x2 = new_mlog_pzcx1x2
-			mlog_pz = new_mlog_pz
-			mlog_pzcx1 = new_mlog_pzcx1
-			mlog_pzcx2 = new_mlog_pzcx2
-	pzcx1x2 = np.exp(-mlog_pzcx1x2)
-	pz = np.sum(pzcx1x2 * px1x2[None,...],axis=(1,2))
-	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,...],axis=2)
-	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,...],axis=1)
-
-	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,"pzcx1":pzcx1,"pzcx2":pzcx2,"dual_z":dual_z,"dual_x1":dual_x1,"dual_x2":dual_x2}
-'''
 
 def detComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	ss_init = kwargs["ss_init"]
@@ -333,9 +208,6 @@ def detComAdmm(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	px2 = np.sum(px1x2,0)
 	px1cx2 = px1x2 /px2[None,:]
 	px2cx1 = (px1x2/ px1[:,None]).T
-
-	#_debug_alpha = 0
-	#_debug_alpha_scale = 1- 1e-4
 
 	if "init_load" in kwargs.keys():
 		pzcx1x2 = kwargs['pzcx1x2']
@@ -802,7 +674,8 @@ def stoLogDrsVar(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	pz = np.sum(pzcx1x2 * px1x2[None,:,:],axis=(1,2))
 	pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
 	pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
-	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,'pzcx1':pzcx1,"pzcx2":pzcx2,"dual_p":dual_p}
+	est_pzx1x2 = pzcx1x2 * px1x2[None,:,:]
+	return {"conv":conv_flag,"niter":itcnt,"pzcx1x2":pzcx1x2,"pz":pz,'pzcx1':pzcx1,"pzcx2":pzcx2,"dual_p":dual_p,'est_pzx1x2':est_pzx1x2}
 
 def detLogDrs(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	ss_fixed = kwargs['ss_init']
@@ -1033,18 +906,6 @@ def wynerDrsTrue(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	def calcCondMi(log_px1cz,log_px2cz,nz):
 		pzx1x2 = calcProdProb(log_px1cz,log_px2cz,nz)		
 		return ut.calcMIcond(np.transpose(pzx1x2,(1,2,0)))
-	'''
-	def logProb2DProj(log_p,pos_grad,ss_step):
-		epsilon = 1e-9
-		pdim = log_p.shape
-		raw_logp = log_p - ss_step * pos_grad
-		lpmax = np.amax(raw_logp,axis=0)
-		lpmax = np.where(lpmax>0,lpmax,np.zeros((pdim[-1])))
-		raw_logp -= lpmax[None,:]
-		raw_p = np.exp(raw_logp) + epsilon # smoothness
-		raw_p /= np.sum(raw_p,axis=0,keepdims=True)
-		return np.log(raw_p)
-	'''
 	log_px1cz = np.log(px1cz)
 	log_px2cz = np.log(px2cz)
 	log_q1 = copy.deepcopy(log_px1cz)
@@ -1060,8 +921,7 @@ def wynerDrsTrue(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		# total loss
 		p_x1cz = np.exp(log_px1cz)
 		p_x2cz = np.exp(log_px2cz)
-		#q_x1cz = np.exp(log_q1)
-		#q_x2cz = np.exp(log_q2)
+
 		est_qzx1x2 = calcProdProb(log_q1,log_q2,nz)
 		est_qx1x2 = np.sum(est_qzx1x2,axis=0)
 		est_qzcx1x2 = est_qzx1x2/np.sum(est_qzx1x2,axis=0,keepdims=True)
@@ -1142,15 +1002,7 @@ def wynerDCA(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		expand_log_px1cz = expandLogPxcz(log_px1cz,adim=2,ndim=nx2)
 		expand_log_px2cz = expandLogPxcz(log_px2cz,adim=1,ndim=nx1)
 		exponent = gamma * (expand_log_px1cz+expand_log_px2cz) + log_pz[:,None,None]
-		#exponent = (expand_log_px1cz+expand_log_px2cz) + log_pz[:,None,None]
-		#exp_2 = (expand_log_px1cz+expand_log_px2cz) + (1/gamma) * log_pz[:,None,None]
-		#exponent -= np.amax(exponent,axis=0)[None,:,:]
-		#if np.amax(exponent) > np.amax(exp_2):
-		#	return softmax( exponent, axis=0)
-		#else:
-		#	return softmax( exp_2,axis=0)
 		return softmax(exponent - np.amax(exponent,axis=0),axis=0)
-	#mask_pzcx1x2 = np.ones(pzcx1x2.shape)
 	itcnt =0 
 	conv_flag = False
 	while itcnt<maxiter:
@@ -1160,11 +1012,16 @@ def wynerDCA(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		pzcx1 = np.sum(pzcx1x2 * (px2cx1.T)[None,:,:],axis=2)
 		pzcx2 = np.sum(pzcx1x2 * px1cx2[None,:,:],axis=1)
 		
-		log_pz = np.log(pz+1e-8)
-		log_px1cz = np.log((pzcx1 * px1[None,:]/pz[:,None]).T+1e-8)
-		log_px2cz = np.log((pzcx2 * px2[None,:]/pz[:,None]).T+1e-8)
+		log_pz = np.log(pz)
+		log_px1cz = np.log((pzcx1 * px1[None,:]/(pz[:,None])).T+1e-8)
+		log_px2cz = np.log((pzcx2 * px2[None,:]/(pz[:,None])).T+1e-8)
 
 		new_pzcx1x2 = calcProbSoftmax(log_px1cz,log_px2cz,log_pz,gamma)
+		# smoothness conditions
+		# NOTE: this makes things stable
+		new_pzcx1x2 += 1e-8
+		new_pzcx1x2 /= np.sum(new_pzcx1x2,axis=0,keepdims=True)
+
 		dtv_vec = 0.5 * np.sum(np.fabs(new_pzcx1x2-pzcx1x2),axis=0)
 		if np.all(dtv_vec < convthres):
 			conv_flag = True
@@ -1172,7 +1029,6 @@ def wynerDCA(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 		else:
 			pzcx1x2 = new_pzcx1x2
 	pzx1x2 = pzcx1x2 * px1x2[None,:,:]
-	#pzcx1x2 = pzx1x2 / np.sum(pzx1x2,axis=0,keepdims=True)
 	pz = np.sum(pzx1x2,axis=(1,2))
 	pzx1 = np.sum(pzx1x2,axis=2)
 	pzcx1 = pzx1 / np.sum(pzx1,axis=0,keepdims=True)

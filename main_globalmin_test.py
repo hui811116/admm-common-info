@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("method",choices=["wyner",'wynerdca',"logdrsvar"])
 parser.add_argument("--maxiter",type=int,default=50000,help="maximum iteration before termination")
 parser.add_argument("--convthres",type=float,default=1e-6,help="convergence threshold")
-parser.add_argument("--nrun",type=int,default=10,help="number of trail of each simulation")
+parser.add_argument("--nrun",type=int,default=100,help="number of trail of each simulation")
 parser.add_argument("--ss_init",type=float,default=1e-1,help="step size initialization")
 parser.add_argument("--ss_scale",type=float,default=0.25,help="step size scaling")
 parser.add_argument("--penalty",type=float,default=128.0,help="penalty coefficient for ADMM-based solvers")
@@ -29,8 +29,8 @@ parser.add_argument("--nb",type=int,default=2,help="number of blocks for observa
 parser.add_argument("--corr",type=float,default=0,help="cyclic observation uncertainty given a label")
 
 parser.add_argument("--betamin",type=float,default=0.1,help="minimum trade-off parameter for search")
-parser.add_argument("--betamax",type=float,default=2.5,help="maximum trade-off parameter for search")
-parser.add_argument("--numbeta",type=int,default=20,help="number of search points")
+parser.add_argument("--betamax",type=float,default=10.0,help="maximum trade-off parameter for search")
+parser.add_argument("--numbeta",type=int,default=40,help="number of search points")
 
 parser.add_argument("--savedir",type=str,default="exp_global_test",help="save directory")
 args = parser.parse_args()
@@ -65,7 +65,7 @@ alg_dict = {
 "ss_init":args.ss_init,
 "ss_scale":args.ss_scale,
 "seed":args.seed,
-"penalty":args.penalty,
+"penalty_coeff":args.penalty,
 }
 
 if args.method=="wyner":
@@ -110,6 +110,10 @@ for beta in gamma_range:
 			mizx1 = ut.calcMI(np.sum(pzx1x2,axis=2))
 			mizx2 = ut.calcMI(np.sum(pzx1x2,axis=1))
 			cmix1x2cz = ut.calcMIcond(np.transpose(pzx1x2,(1,2,0)))
+			if cmix1x2cz > 1e1:
+				print("unstable")
+				print(pzcx1x2)
+				sys.exit("debugging")
 			# loss calculation
 			joint_mi = entz - entzcx1x2
 			tmp_loss = joint_mi - beta * (mizx1 + mizx2) # for recording
@@ -142,6 +146,7 @@ for beta in gamma_range:
 				cmix1x2cz,
 				dkl_error,])
 			ridx+=1
+
 
 d_save_dir = os.path.join(os.getcwd(),args.savedir)
 os.makedirs(d_save_dir,exist_ok=True)
