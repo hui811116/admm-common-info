@@ -14,7 +14,7 @@ import hessian as hs
 
 parser = argparse.ArgumentParser()
 parser.add_argument("method",choices=["wyner",'wynerdca'])
-parser.add_argument("--maxiter",type=int,default=50000,help="maximum iteration before termination")
+parser.add_argument("--maxiter",type=int,default=100000,help="maximum iteration before termination")
 parser.add_argument("--convthres",type=float,default=1e-6,help="convergence threshold")
 parser.add_argument("--nrun",type=int,default=10,help="number of trail of each simulation")
 parser.add_argument("--ss_init",type=float,default=1e-1,help="step size initialization")
@@ -83,12 +83,16 @@ for beta in gamma_range:
 			dkl_error = ut.calcKL(prob_joint,est_px1x2)
 
 			entzcx1x2 = np.sum(-pzx1x2 * np.log(pzcx1x2))
+			joint_mi = entz - entzcx1x2
 			# take the maximum element
 			mizx1 = ut.calcMI(np.sum(pzx1x2,axis=2))
 			mizx2 = ut.calcMI(np.sum(pzx1x2,axis=1))
-			cmix1x2cz = ut.calcMIcond(np.transpose(pzx1x2,(1,2,0)))
+			#cmix1x2cz = ut.calcMIcond(np.transpose(pzx1x2,(1,2,0))) # this is faulty
+			# by definition 
+			cmix1x2cz = joint_mi - (mizx1+mizx2) + mix1x2
+
 			# loss calculation
-			joint_mi = entz - entzcx1x2
+			
 			tmp_loss = joint_mi - beta * (mizx1 + mizx2) # for recording
 			eigvals = hs.computeHessian_2views(pzcx1x2,prob_joint)
 			eig_v2 = eigvals[:,-2]

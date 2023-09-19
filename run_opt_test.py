@@ -111,14 +111,13 @@ for gidx ,gamma in enumerate(gamma_range):
 			entzcx1x2 = np.sum(-pzx1x2*np.log(pzcx1x2))
 			joint_mi = entz- entzcx1x2
 
-			cmix1x2z = ut.calcMIcond(np.transpose(pzx1x2,axes=[1,2,0]))
 			# take the maximum element
 			pzcx1 = np.sum(pzx1x2,axis=2)/px1[None,:]
 			pzcx2 = np.sum(pzx1x2,axis=1)/px2[None,:]
 
 			mizx1 = ut.calcMI(pzcx1 * px1[None,:])
 			mizx2 = ut.calcMI(pzcx2 * px2[None,:])
-			cmix1x2cz = ut.calcMIcond(np.transpose(pzx1x2,(1,2,0)))
+			cmix1x2cz = joint_mi - (mizx1 + mizx2) + mix1x2 # by definition
 			# evaluation
 			z_train = ev.labelSampling(y_train,x_train,pzcx1x2)
 			z_test  = ev.labelSampling(y_test,x_test,pzcx1x2)

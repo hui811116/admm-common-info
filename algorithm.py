@@ -992,7 +992,7 @@ def wynerDCA(px1x2,nz,gamma,maxiter,convthres,**kwargs):
 	if "init_load" in kwargs.keys():
 		pzcx1x2 = kwargs['pzcx1x2']
 	else:
-		pzcx1x2 = rng.random((nz,nx1,nx2))
+		pzcx1x2 = rng.random((nz,nx1,nx2))+1e-8
 		pzcx1x2 /= np.sum(pzcx1x2,axis=0,keepdims=True)
 	# helper
 	def expandLogPxcz(log_pxxcz,adim,ndim):

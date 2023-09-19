@@ -10,12 +10,15 @@ def calcKL(px,py):
 def calcMI(pxy):
 	return np.sum(pxy * np.log(pxy/np.sum(pxy,0,keepdims=True)/np.sum(pxy,1,keepdims=True)))
 
+'''
+# This is wrong, avoid using this
 def calcMIcond(pxyz):
 	pz = np.sum(pxyz,axis=(0,1),keepdims=True)
 	pxycz = pxyz/pz[None,None,:]
 	pxcz = np.sum(pxyz,axis=1)/pz[None,:]
 	pycz = np.sum(pxyz,axis=0)/pz[None,:]
 	return max(np.sum(pxyz * (np.log(pxycz) - np.log(pycz) - np.log(pxcz)) ),0)
+'''
 
 def calcEnt(pz):
 	return -np.sum(pz * np.log(pz))

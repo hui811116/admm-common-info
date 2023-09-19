@@ -89,9 +89,10 @@ for nz in nz_set:
 		# take the maximum element
 		mizx1 = ut.calcMI(np.sum(pzx1x2,axis=2))
 		mizx2 = ut.calcMI(np.sum(pzx1x2,axis=1))
-		cmix1x2cz = ut.calcMIcond(np.transpose(pzx1x2,(1,2,0)))
+		#cmix1x2cz = ut.calcMIcond(np.transpose(pzx1x2,(1,2,0)))
 		# loss calculation
 		joint_mi = entz - entzcx1x2
+		cmix1x2cz = joint_mi - (mizx1 +mizx2) + mix1x2
 		dkl_error = np.sum(prob_joint * (np.log(prob_joint)-np.log(np.sum(est_pzx1x2,axis=0))))
 		tmp_result += [entz,mizx1,mizx2,joint_mi,dkl_error,cmix1x2cz]
 			

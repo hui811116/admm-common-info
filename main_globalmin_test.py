@@ -109,13 +109,12 @@ for beta in gamma_range:
 			# take the maximum element
 			mizx1 = ut.calcMI(np.sum(pzx1x2,axis=2))
 			mizx2 = ut.calcMI(np.sum(pzx1x2,axis=1))
-			cmix1x2cz = ut.calcMIcond(np.transpose(pzx1x2,(1,2,0)))
-			if cmix1x2cz > 1e1:
-				print("unstable")
-				print(pzcx1x2)
-				sys.exit("debugging")
-			# loss calculation
 			joint_mi = entz - entzcx1x2
+			#cmix1x2cz = ut.calcMIcond(np.transpose(pzx1x2,(1,2,0)))
+			cmix1x2cz = joint_mi - (mizx1 + mizx2) + mix1x2
+
+			# loss calculation
+			
 			tmp_loss = joint_mi - beta * (mizx1 + mizx2) # for recording
 			# SECOND ORDER ANALYSIS
 			#eigvals = hs.computeHessian_2views(pzcx1x2,prob_joint)

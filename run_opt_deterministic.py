@@ -93,13 +93,16 @@ for gidx ,gamma in enumerate(gamma_range):
 				encoder_list.append(pzcx1x2)
 			# take the maximum element
 			pzx1x2 = pzcx1x2 * prob_joint[None,:,:]
-			cmix1x2cz = ut.calcMIcond(np.transpose(pzx1x2,axes=[1,2,0]))
+
+			#cmix1x2cz = ut.calcMIcond(np.transpose(pzx1x2,axes=[1,2,0]))
 			entzcx1x2 = np.sum(-pzx1x2 * np.log(pzcx1x2))
 			entz = ut.calcEnt(pz)
 			mizx1 = ut.calcMI(pzcx1 * px1[None,:])
 			mizx2 = ut.calcMI(pzcx2 * px2[None,:])
-			# loss calculation
 			joint_mi = entz - entzcx1x2
+			cmix1x2cz = joint_mi - (mizx1 + mizx2) + mix1x2
+			# loss calculation
+			
 			tmp_loss = entz +gamma * cmix1x2cz
 			tmp_result += [entz,mizx1,mizx2,joint_mi,tmp_loss,cmix1x2cz]
 				

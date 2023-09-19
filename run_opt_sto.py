@@ -115,12 +115,13 @@ for gidx ,gamma in enumerate(gamma_range):
 
 			pzx1x2 = pzcx1x2 * prob_joint[None,:,:]
 			entzcx1x2 = -np.sum(pzx1x2 * np.log(pzcx1x2))
+			joint_mi = entz - entzcx1x2
 			# take the maximum element
 			mizx1 = ut.calcMI(pzcx1 * px1[None,:])
 			mizx2 = ut.calcMI(pzcx2 * px2[None,:])
-			cmix1x2cz = ut.calcMIcond(np.transpose(pzcx1x2 * prob_joint[None,:,:],(1,2,0)))
+			cmix1x2cz = joint_mi - (mizx1 + mizx2) + mix1x2 # by definition
 			# loss calculation
-			joint_mi = entz - entzcx1x2
+			
 			tmp_loss = (1+gamma)*joint_mi - gamma * mizx1 - gamma * mizx2
 			# clustering accuracy
 			tmp_result += [entz,mizx1,mizx2,joint_mi,tmp_loss,cmix1x2cz]
